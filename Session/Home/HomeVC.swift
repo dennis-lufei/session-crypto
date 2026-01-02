@@ -870,10 +870,18 @@ public final class HomeVC: BaseVC, LibSessionRespondingViewController, UITableVi
                 icon: UIImage(systemName: "person.2.fill") ?? UIImage(),
                 title: NSLocalizedString("发起群聊", comment: "Initiate Group Chat"),
                 action: { [weak self] in
-                    self?.addMenuView?.hide { [weak self] in
-                        self?.addMenuView = nil
+                    guard let self = self else { return }
+                    let dependencies = self.viewModel.dependencies
+                    self.addMenuView?.hide { [weak self] in
+                        guard let self = self else { return }
+                        self.addMenuView = nil
+                        
+                        // Navigate to create group page
+                        let viewController = NewClosedGroupVC(using: dependencies)
+                        let navigationController = StyledNavigationController(rootViewController: viewController)
+                        navigationController.modalPresentationStyle = .fullScreen
+                        self.present(navigationController, animated: true, completion: nil)
                     }
-                    // TODO: Implement group chat creation
                 }
             ),
             AddMenuView.MenuItem(

@@ -54,7 +54,9 @@ struct StartConversationScreen: View {
                             title: "groupCreate".localized()
                         ) {
                             let viewController = NewClosedGroupVC(using: dependencies)
-                            self.host.controller?.navigationController?.pushViewController(viewController, animated: true)
+                            let navigationController = StyledNavigationController(rootViewController: viewController)
+                            navigationController.modalPresentationStyle = .fullScreen
+                            self.host.controller?.present(navigationController, animated: true, completion: nil)
                         }
                         .accessibility(
                             Accessibility(

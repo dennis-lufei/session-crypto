@@ -131,10 +131,13 @@ public final class ProfilePictureView: UIView {
             additionalProfileIconBackgroundWidthConstraint.constant = size.iconSize
             additionalProfileIconBackgroundHeightConstraint.constant = size.iconSize
             
-            profileIconBackgroundView.layer.cornerRadius = (size.iconSize / 2)
-            additionalProfileIconBackgroundView.layer.cornerRadius = (size.iconSize / 2)
+            profileIconBackgroundView.layer.cornerRadius = (size.iconSize / 2)  // 图标背景保持圆形
+            additionalProfileIconBackgroundView.layer.cornerRadius = (size.iconSize / 2)  // 图标背景保持圆形
             profileIconLabel.font = .boldSystemFont(ofSize: floor(size.iconSize * 0.75))
             additionalProfileIconLabel.font = .boldSystemFont(ofSize: floor(size.iconSize * 0.75))
+            
+            // 确保头像圆角保持为4px
+            self.layer.cornerRadius = 4
         }
     }
     public var customWidth: CGFloat? {
@@ -296,6 +299,7 @@ public final class ProfilePictureView: UIView {
         super.init(frame: CGRect(x: 0, y: 0, width: size.viewSize, height: size.viewSize))
         
         clipsToBounds = true
+        layer.cornerRadius = 4  // 统一设置正方形小圆角
         setUpViewHierarchy()
     }
     
@@ -572,7 +576,8 @@ public final class ProfilePictureView: UIView {
         guard let additionalInfo: Info = additionalInfo else {
             imageViewWidthConstraint.constant = size.imageSize
             imageViewHeightConstraint.constant = size.imageSize
-            imageContainerView.layer.cornerRadius = (size.imageSize / 2)
+            imageContainerView.layer.cornerRadius = 4  // 正方形小圆角
+            self.layer.cornerRadius = 4  // 统一设置外层圆角
             return
         }
         
@@ -650,11 +655,12 @@ public final class ProfilePictureView: UIView {
         
         imageViewWidthConstraint.constant = size.multiImageSize
         imageViewHeightConstraint.constant = size.multiImageSize
-        imageContainerView.layer.cornerRadius = (size.multiImageSize / 2)
+        imageContainerView.layer.cornerRadius = 4  // 正方形小圆角
         additionalImageViewWidthConstraint.constant = size.multiImageSize
         additionalImageViewHeightConstraint.constant = size.multiImageSize
-        additionalImageContainerView.layer.cornerRadius = (size.multiImageSize / 2)
-        additionalProfileIconBackgroundView.layer.cornerRadius = (size.iconSize / 2)
+        additionalImageContainerView.layer.cornerRadius = 4  // 正方形小圆角
+        additionalProfileIconBackgroundView.layer.cornerRadius = (size.iconSize / 2)  // 图标背景保持圆形
+        self.layer.cornerRadius = 4  // 统一设置外层圆角
     }
     
     private func contentsRect(

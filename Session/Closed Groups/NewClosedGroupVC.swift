@@ -36,7 +36,12 @@ final class NewClosedGroupVC: BaseVC, UITableViewDataSource, UITableViewDelegate
     private lazy var data: [ArraySection<Section, WithProfile<Contact>>] = [
         ArraySection(model: .contacts, elements: contacts)
     ]
-    private var selectedProfileIds: Set<String> = []
+    private var selectedProfileIds: Set<String> = [] {
+        didSet {
+            updateSelectedAvatarsView()
+            updateCreateButtonState()
+        }
+    }
     private var searchText: String = ""
     
     // MARK: - Initialization
@@ -103,30 +108,14 @@ final class NewClosedGroupVC: BaseVC, UITableViewDataSource, UITableViewDelegate
     
     // MARK: - Components
     
-    private static let textFieldHeight: CGFloat = 50
     private static let searchBarHeight: CGFloat = (36 + (Values.mediumSpacing * 2))
+    private static let avatarSize: CGFloat = 24
+    private static let avatarContainerHeight: CGFloat = 60
     
     private let contentStackView: UIStackView = {
         let result: UIStackView = UIStackView()
         result.axis = .vertical
         result.distribution = .fill
-        
-        return result
-    }()
-    
-    private lazy var nameTextField: SNTextField = {
-        let result = SNTextField(
-            placeholder: "groupNameEnter".localized(),
-            usesDefaultHeight: false,
-            customHeight: NewClosedGroupVC.textFieldHeight
-        )
-        result.text = prefilledName
-        result.set(.height, to: NewClosedGroupVC.textFieldHeight)
-        result.themeBorderColor = .borderSeparator
-        result.layer.cornerRadius = 13
-        result.delegate = self
-        result.accessibilityIdentifier = "Group name input"
-        result.isAccessibilityElement = true
         
         return result
     }()
@@ -138,34 +127,86 @@ final class NewClosedGroupVC: BaseVC, UITableViewDataSource, UITableViewDelegate
         result.delegate = self
         result.searchTextField.accessibilityIdentifier = "Search contacts field"
         result.set(.height, to: NewClosedGroupVC.searchBarHeight)
-
+        
+        // 修改placeholder为"搜索"
+        result.searchTextField.themeAttributedPlaceholder = ThemedAttributedString(
+            string: "搜索",
+            attributes: [
+                .themeForegroundColor: ThemeValue.textSecondary
+            ]
+        )
+        
         return result
     }()
+    
+    // 已选择联系人头像容器（在搜索框下方）
+    private lazy var selectedAvatarsContainer: UIView = {
+        let result = UIView()
+        result.themeBackgroundColor = .clear
+        result.set(.height, to: NewClosedGroupVC.avatarContainerHeight)
+        result.clipsToBounds = true
+        result.isHidden = true // 初始隐藏
+        
+        return result
+    }()
+    
+    private lazy var selectedAvatarsScrollView: UIScrollView = {
+        let result = UIScrollView()
+        result.showsHorizontalScrollIndicator = false
+        result.showsVerticalScrollIndicator = false
+        result.themeBackgroundColor = .clear
+        result.set(.height, to: NewClosedGroupVC.avatarContainerHeight)
+        
+        return result
+    }()
+    
+    private lazy var selectedAvatarsStackView: UIStackView = {
+        let result = UIStackView()
+        result.axis = .horizontal
+        result.spacing = Values.smallSpacing
+        result.alignment = .center
+        result.distribution = .fill
+        
+        return result
+    }()
+    
+    private var searchBarTopConstraint: NSLayoutConstraint?
+    private var searchBarCenterYConstraint: NSLayoutConstraint?
     
     private lazy var headerView: UIView = {
         let result: UIView = UIView(
             frame: CGRect(
                 x: 0, y: 0,
                 width: UIScreen.main.bounds.width,
-                height: (
-                    Values.mediumSpacing +
-                    NewClosedGroupVC.textFieldHeight +
-                    NewClosedGroupVC.searchBarHeight
-                )
+                height: NewClosedGroupVC.searchBarHeight
             )
         )
-        result.addSubview(nameTextField)
+        
+        // 搜索框 - 左右padding改为16px
         result.addSubview(searchBar)
+        searchBar.pin(.leading, to: .leading, of: result, withInset: 16)
+        searchBar.pin(.trailing, to: .trailing, of: result, withInset: -16)
         
-        nameTextField.pin(.top, to: .top, of: result, withInset: Values.mediumSpacing)
-        nameTextField.pin(.leading, to: .leading, of: result, withInset: Values.largeSpacing)
-        nameTextField.pin(.trailing, to: .trailing, of: result, withInset: -Values.largeSpacing)
+        // 初始状态：没有选中联系人时，搜索框垂直居中
+        searchBarCenterYConstraint = searchBar.center(.vertical, in: result)
+        searchBarCenterYConstraint?.isActive = true
         
-        // Note: The top & bottom padding is built into the search bar
-        searchBar.pin(.top, to: .bottom, of: nameTextField)
-        searchBar.pin(.leading, to: .leading, of: result, withInset: Values.largeSpacing)
-        searchBar.pin(.trailing, to: .trailing, of: result, withInset: -Values.largeSpacing)
-        searchBar.pin(.bottom, to: .bottom, of: result)
+        // 已选择联系人头像容器（在搜索框下方）
+        result.addSubview(selectedAvatarsContainer)
+        selectedAvatarsContainer.pin(.top, to: .bottom, of: searchBar, withInset: Values.smallSpacing)
+        selectedAvatarsContainer.pin(.leading, to: .leading, of: result, withInset: 16)
+        selectedAvatarsContainer.pin(.trailing, to: .trailing, of: result, withInset: -16)
+        selectedAvatarsContainer.pin(.bottom, to: .bottom, of: result)
+        
+        selectedAvatarsContainer.addSubview(selectedAvatarsScrollView)
+        selectedAvatarsScrollView.pin(to: selectedAvatarsContainer)
+        
+        selectedAvatarsScrollView.addSubview(selectedAvatarsStackView)
+        selectedAvatarsStackView.pin(.top, to: .top, of: selectedAvatarsScrollView)
+        selectedAvatarsStackView.pin(.leading, to: .leading, of: selectedAvatarsScrollView)
+        selectedAvatarsStackView.pin(.trailing, to: .trailing, of: selectedAvatarsScrollView)
+        selectedAvatarsStackView.pin(.bottom, to: .bottom, of: selectedAvatarsScrollView)
+        selectedAvatarsStackView.set(.height, to: NewClosedGroupVC.avatarContainerHeight)
         
         return result
     }()
@@ -205,14 +246,17 @@ final class NewClosedGroupVC: BaseVC, UITableViewDataSource, UITableViewDelegate
         return result
     }()
     
-    private lazy var createGroupButton: SessionButton = {
-        let result = SessionButton(style: .bordered, size: .large)
-        result.translatesAutoresizingMaskIntoConstraints = false
-        result.setTitle("create".localized(), for: .normal)
-        result.addTarget(self, action: #selector(createClosedGroup), for: .touchUpInside)
+    private lazy var createButton: UIBarButtonItem = {
+        let result = UIBarButtonItem(
+            title: "完成",
+            style: .plain,
+            target: self,
+            action: #selector(createClosedGroup)
+        )
+        result.themeTintColor = .primary
         result.accessibilityIdentifier = "Create group"
         result.isAccessibilityElement = true
-        result.set(.width, to: 160)
+        result.isEnabled = false // 初始状态禁用
         
         return result
     }()
@@ -225,18 +269,33 @@ final class NewClosedGroupVC: BaseVC, UITableViewDataSource, UITableViewDelegate
         view.themeBackgroundColor = .backgroundSecondary
         
         let customTitleFontSize = Values.largeFontSize
-        setNavBarTitle("groupCreate".localized(), customFontSize: customTitleFontSize)
+        setNavBarTitle("发起群聊", customFontSize: customTitleFontSize)
         
+        // 初始化crossfadeLabel文本
+        crossfadeLabel.text = "发起群聊"
+        
+        // 设置右上角创建按钮
+        navigationItem.rightBarButtonItem = createButton
+        updateCreateButtonState()
+        
+        // 设置左侧返回/关闭按钮
         if !hideCloseButton {
             let closeButton = UIBarButtonItem(image: #imageLiteral(resourceName: "X"), style: .plain, target: self, action: #selector(close))
             closeButton.themeTintColor = .textPrimary
-            navigationItem.rightBarButtonItem = closeButton
+            navigationItem.leftBarButtonItem = closeButton
             navigationItem.leftBarButtonItem?.accessibilityIdentifier = "Cancel"
             navigationItem.leftBarButtonItem?.isAccessibilityElement = true
+        } else {
+            // 即使hideCloseButton为true，也确保有返回按钮
+            let backButton = UIBarButtonItem(title: "", style: .plain, target: nil, action: nil)
+            navigationItem.backBarButtonItem = backButton
         }
         
         // Set up content
         setUpViewHierarchy()
+        
+        // 初始化已选用户头像视图
+        updateSelectedAvatarsView()
     }
 
     private func setUpViewHierarchy() {
@@ -267,10 +326,6 @@ final class NewClosedGroupVC: BaseVC, UITableViewDataSource, UITableViewDelegate
         fadeView.pin(.leading, to: .leading, of: view)
         fadeView.pin(.trailing, to: .trailing, of: view)
         fadeView.pin(.bottom, to: .bottom, of: view)
-        
-        view.addSubview(createGroupButton)
-        createGroupButton.center(.horizontal, in: view)
-        createGroupButton.pin(.bottom, to: .bottom, of: view.safeAreaLayoutGuide, withInset: -Values.smallSpacing)
     }
     
     // MARK: - Table View Data Source
@@ -325,50 +380,10 @@ final class NewClosedGroupVC: BaseVC, UITableViewDataSource, UITableViewDelegate
         tableView.reloadRows(at: [indexPath], with: .none)
     }
     
-    func scrollViewDidScroll(_ scrollView: UIScrollView) {
-        let nameTextFieldCenterY = nameTextField.convert(
-            CGPoint(x: nameTextField.bounds.midX, y: nameTextField.bounds.midY),
-            to: scrollView
-        ).y
-        let shouldShowGroupNameInTitle: Bool = (scrollView.contentOffset.y > nameTextFieldCenterY)
-        let groupNameLabelVisible: Bool = (crossfadeLabel.alpha >= 1)
-        
-        switch (shouldShowGroupNameInTitle, groupNameLabelVisible) {
-            case (true, false):
-                UIView.animate(withDuration: 0.2) {
-                    self.navBarTitleLabel.alpha = 0
-                    self.crossfadeLabel.alpha = 1
-                }
-                
-            case (false, true):
-                UIView.animate(withDuration: 0.2) {
-                    self.navBarTitleLabel.alpha = 1
-                    self.crossfadeLabel.alpha = 0
-                }
-                
-            default: break
-        }
-    }
-    
     // MARK: - Interaction
-    
-    func textFieldDidEndEditing(_ textField: UITextField) {
-        crossfadeLabel.text = (textField.text?.isEmpty == true ?
-            "groupCreate".localized() :
-            textField.text
-        )
-    }
-    
-    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
-        nameTextField.resignFirstResponder()
-        return false
-    }
 
     fileprivate func tableViewWasTouched(_ tableView: TableView, withView hitView: UIView?) {
-        if nameTextField.isFirstResponder {
-            nameTextField.resignFirstResponder()
-        }
-        else if searchBar.isFirstResponder {
+        if searchBar.isFirstResponder {
             var hitSuperview: UIView? = hitView?.superview
             
             while hitSuperview != nil && hitSuperview != searchBar {
@@ -384,7 +399,142 @@ final class NewClosedGroupVC: BaseVC, UITableViewDataSource, UITableViewDelegate
     }
     
     @objc private func close() {
-        dismiss(animated: true, completion: nil)
+        // 如果是从navigationController push进来的，则pop；否则dismiss
+        if navigationController?.viewControllers.count ?? 0 > 1 {
+            navigationController?.popViewController(animated: true)
+        } else {
+            dismiss(animated: true, completion: nil)
+        }
+    }
+    
+    // MARK: - Selected Avatars Management
+    
+    private func updateSelectedAvatarsView() {
+        // 清除现有的头像视图
+        selectedAvatarsStackView.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        
+        // 添加已选择用户的头像
+        for profileId in selectedProfileIds.sorted() {
+            guard let contact = contacts.first(where: { $0.profileId == profileId }) else { continue }
+            
+            let avatarView = ProfilePictureView(
+                size: .list,
+                dataManager: dependencies[singleton: .imageDataManager]
+            )
+            
+            let (info, _) = ProfilePictureView.Info.generateInfoFrom(
+                size: .list,
+                publicKey: contact.profileId,
+                threadVariant: .contact,
+                displayPictureUrl: nil,
+                profile: contact.profile,
+                using: dependencies
+            )
+            
+            if let profileInfo = info {
+                avatarView.update(profileInfo)
+            }
+            
+            // 添加删除按钮
+            let containerView = UIView()
+            containerView.addSubview(avatarView)
+            
+            let deleteButton = UIButton(type: .custom)
+            deleteButton.setImage(UIImage(systemName: "xmark.circle.fill"), for: .normal)
+            deleteButton.tintColor = .systemRed
+            deleteButton.backgroundColor = .white
+            deleteButton.layer.cornerRadius = 10
+            deleteButton.clipsToBounds = true
+            deleteButton.addTarget(self, action: #selector(removeSelectedContact(_:)), for: .touchUpInside)
+            // 使用profileId作为标识符存储
+            deleteButton.accessibilityIdentifier = profileId
+            containerView.addSubview(deleteButton)
+            
+            avatarView.pin(to: containerView)
+            deleteButton.set(.width, to: 20)
+            deleteButton.set(.height, to: 20)
+            deleteButton.pin(.top, to: .top, of: containerView, withInset: -5)
+            // delete button往右凸出自己一半的width（20/2 = 10）
+            deleteButton.pin(.trailing, to: .trailing, of: containerView, withInset: 5)
+            
+            containerView.set(.width, to: ProfilePictureView.Info.Size.list.viewSize)
+            containerView.set(.height, to: ProfilePictureView.Info.Size.list.viewSize)
+            
+            selectedAvatarsStackView.addArrangedSubview(containerView)
+        }
+        
+        // 更新scrollView的contentSize
+        selectedAvatarsStackView.layoutIfNeeded()
+        selectedAvatarsScrollView.layoutIfNeeded()
+        
+        selectedAvatarsScrollView.contentSize = CGSize(
+            width: max(selectedAvatarsStackView.frame.width, selectedAvatarsScrollView.bounds.width),
+            height: NewClosedGroupVC.avatarContainerHeight
+        )
+        
+        // 显示/隐藏头像容器
+        selectedAvatarsContainer.isHidden = selectedProfileIds.isEmpty
+        
+        // 更新headerView高度
+        updateHeaderViewHeight()
+        
+        // 强制更新布局
+        view.layoutIfNeeded()
+    }
+    
+    private func updateHeaderViewHeight() {
+        let hasSelectedContacts = !selectedProfileIds.isEmpty
+        
+        // 更新搜索框的约束：有选中联系人时在顶部，没有时垂直居中
+        if hasSelectedContacts {
+            // 有选中联系人：搜索框在顶部，增加顶部间距
+            searchBarCenterYConstraint?.isActive = false
+            if searchBarTopConstraint == nil {
+                searchBarTopConstraint = searchBar.pin(.top, to: .top, of: headerView, withInset: Values.mediumSpacing)
+            }
+            searchBarTopConstraint?.isActive = true
+        } else {
+            // 没有选中联系人：搜索框垂直居中
+            searchBarTopConstraint?.isActive = false
+            // 使用已存在的centerY约束，如果不存在则创建
+            if searchBarCenterYConstraint == nil {
+                searchBarCenterYConstraint = searchBar.center(.vertical, in: headerView)
+            }
+            searchBarCenterYConstraint?.isActive = true
+        }
+        
+        // 计算高度：有选中联系人时：顶部间距 + 搜索框高度 + 间距 + 头像容器高度
+        // 没有选中联系人时：搜索框高度（垂直居中）
+        let newHeight = hasSelectedContacts ? 
+            (Values.mediumSpacing + NewClosedGroupVC.searchBarHeight + Values.smallSpacing + NewClosedGroupVC.avatarContainerHeight) :
+            NewClosedGroupVC.searchBarHeight
+        
+        var frame = headerView.frame
+        frame.size.height = newHeight
+        headerView.frame = frame
+        
+        tableView.tableHeaderView = headerView
+        tableView.tableHeaderView?.layoutIfNeeded()
+    }
+    
+    @objc private func removeSelectedContact(_ sender: UIButton) {
+        guard let profileId = sender.accessibilityIdentifier else { return }
+        selectedProfileIds.remove(profileId)
+        
+        // 刷新表格视图
+        if let indexPath = data.first?.elements.firstIndex(where: { $0.profileId == profileId }).map({ IndexPath(row: $0, section: 0) }) {
+            tableView.reloadRows(at: [indexPath], with: .none)
+        }
+    }
+    
+    private func updateCreateButtonState() {
+        let count = selectedProfileIds.count
+        createButton.isEnabled = count > 0
+        if count > 0 {
+            createButton.title = "完成(\(count))"
+        } else {
+            createButton.title = "完成"
+        }
     }
     
     @objc private func createClosedGroup() {
@@ -400,10 +550,23 @@ final class NewClosedGroupVC: BaseVC, UITableViewDataSource, UITableViewDelegate
             )
             present(modal, animated: true)
         }
-        guard
-            let name: String = nameTextField.text?.trimmingCharacters(in: .whitespacesAndNewlines),
-            name.count > 0
-        else {
+        // 生成默认群组名称
+        let name: String = {
+            if let prefilledName = prefilledName, !prefilledName.isEmpty {
+                return prefilledName
+            }
+            // 根据选中的联系人生成默认名称
+            let selectedNames = selectedProfileIds.compactMap { id in
+                contacts.first(where: { $0.profileId == id })?.profile?.displayName() ?? id.truncated()
+            }
+            if selectedNames.count <= 3 {
+                return selectedNames.joined(separator: "、")
+            } else {
+                return selectedNames.prefix(3).joined(separator: "、") + "等\(selectedNames.count)人"
+            }
+        }()
+        
+        guard !name.isEmpty else {
             return showError(title: "groupNameEnterPlease".localized())
         }
         guard !LibSession.isTooLong(groupName: name) else {
