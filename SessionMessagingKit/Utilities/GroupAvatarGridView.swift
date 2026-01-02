@@ -9,7 +9,7 @@ public final class GroupAvatarGridView: UIView {
     private static let maxMembers = 9
     private let size: ProfilePictureView.Info.Size
     private var dataManager: ImageDataManagerType?
-    private var memberViews: [ProfilePictureView] = []
+    private var memberViews: [SessionImageView] = []
     private var widthConstraint: NSLayoutConstraint?
     private var heightConstraint: NSLayoutConstraint?
     
@@ -77,11 +77,15 @@ public final class GroupAvatarGridView: UIView {
                 guard memberIndex < displayMembers.count else { break }
                 let member = displayMembers[memberIndex]
                 
-                let avatarView = ProfilePictureView(
-                    size: size,
+                // 创建 SessionImageView 来直接显示头像
+                let avatarView = SessionImageView(
                     dataManager: dataManager ?? dependencies[singleton: .imageDataManager]
                 )
                 avatarView.translatesAutoresizingMaskIntoConstraints = false
+                avatarView.contentMode = .scaleAspectFit
+                avatarView.clipsToBounds = true
+                avatarView.layer.cornerRadius = 4  // 正方形小圆角
+                avatarView.themeBackgroundColor = .backgroundSecondary
                 
                 addSubview(avatarView)
                 memberViews.append(avatarView)
@@ -95,7 +99,7 @@ public final class GroupAvatarGridView: UIView {
                 avatarView.set(UIView.Dimension.width, to: cellSize)
                 avatarView.set(UIView.Dimension.height, to: cellSize)
                 
-                // 更新头像内容
+                // 获取头像数据源并加载图片
                 let (info, _) = ProfilePictureView.Info.generateInfoFrom(
                     size: size,
                     publicKey: member.profileId,
@@ -105,16 +109,17 @@ public final class GroupAvatarGridView: UIView {
                     using: dependencies
                 )
                 
-                if let profileInfo = info {
-                    avatarView.update(profileInfo)
-                }
-                
-                // 在更新后设置 contentMode 为 scaleAspectFit，确保头像完整显示
-                // 查找内部的 SessionImageView 并设置 contentMode
-                avatarView.layoutIfNeeded() // 确保视图已经布局
-                if let imageContainerView = avatarView.subviews.first(where: { $0.subviews.count > 0 }),
-                   let imageView = imageContainerView.subviews.first(where: { $0 is UIImageView }) as? UIImageView {
-                    imageView.contentMode = .scaleAspectFit
+                // 如果有图片源，加载图片；否则显示占位符
+                if let source = info?.source {
+                    avatarView.loadImage(source)
+                } else {
+                    // 如果没有图片源，显示占位符（使用用户ID的前两个字符）
+                    let placeholderText = String(member.profileId.prefix(2)).uppercased()
+                    avatarView.loadImage(.placeholderIcon(
+                        seed: member.profileId,
+                        text: placeholderText,
+                        size: cellSize
+                    ))
                 }
                 
                 memberIndex += 1
