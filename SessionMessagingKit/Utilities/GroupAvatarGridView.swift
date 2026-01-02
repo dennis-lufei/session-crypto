@@ -61,6 +61,15 @@ public final class GroupAvatarGridView: UIView {
         let spacing: CGFloat = 1
         let cellSize = calculateCellSize(layoutInfo: layoutInfo, spacing: spacing)
         
+        // 计算整个网格的实际宽度和高度
+        let gridWidth = CGFloat(layoutInfo.maxColumns) * cellSize + CGFloat(layoutInfo.maxColumns - 1) * spacing
+        let gridHeight = CGFloat(layoutInfo.rows.count) * cellSize + CGFloat(layoutInfo.rows.count - 1) * spacing
+        
+        // 计算整个网格的水平和垂直偏移量（用于居中）
+        let containerSize = size.viewSize
+        let horizontalOffset = (containerSize - gridWidth) / 2
+        let verticalOffset = (containerSize - gridHeight) / 2
+        
         // 创建并布局头像视图
         var memberIndex = 0
         for (rowIndex, rowInfo) in layoutInfo.rows.enumerated() {
@@ -90,9 +99,9 @@ public final class GroupAvatarGridView: UIView {
                 addSubview(avatarView)
                 memberViews.append(avatarView)
                 
-                // 计算位置：考虑行偏移（用于居中）
-                let x = rowOffset + CGFloat(colIndex) * (cellSize + spacing)
-                let y = CGFloat(rowIndex) * (cellSize + spacing)
+                // 计算位置：考虑整体偏移（用于居中）和行偏移
+                let x = horizontalOffset + rowOffset + CGFloat(colIndex) * (cellSize + spacing)
+                let y = verticalOffset + CGFloat(rowIndex) * (cellSize + spacing)
                 
                 avatarView.pin(UIView.HorizontalEdge.leading, to: UIView.HorizontalEdge.leading, of: self, withInset: x)
                 avatarView.pin(UIView.VerticalEdge.top, to: UIView.VerticalEdge.top, of: self, withInset: y)
@@ -127,7 +136,7 @@ public final class GroupAvatarGridView: UIView {
         }
         
         // 容器大小固定为 size.viewSize（与 ProfilePictureView 保持一致）
-        let containerSize = size.viewSize
+        // containerSize 已在上面声明，这里直接使用
         
         // 更新约束
         if let widthConstraint = widthConstraint {
