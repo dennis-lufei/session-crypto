@@ -21,6 +21,8 @@ final class AddMenuView: UIView {
     private lazy var blurEffectView: UIVisualEffectView = {
         let result = UIVisualEffectView()
         result.applyLiquidGlassWithObserver()
+        result.layer.cornerRadius = 16
+        result.clipsToBounds = true
         return result
     }()
     
@@ -30,13 +32,13 @@ final class AddMenuView: UIView {
         result.addSubview(blurEffectView)
         blurEffectView.pin(to: result)
         
-        result.layer.cornerRadius = 14
-        result.layer.masksToBounds = true
+        result.layer.cornerRadius = 16
+        result.layer.masksToBounds = false
+        result.clipsToBounds = false
         result.layer.shadowColor = UIColor.black.cgColor
         result.layer.shadowOpacity = 0.25
         result.layer.shadowRadius = 16
         result.layer.shadowOffset = CGSize(width: 0, height: 4)
-        result.clipsToBounds = false
         
         return result
     }()
@@ -84,6 +86,14 @@ final class AddMenuView: UIView {
         let totalHeight = CGFloat(items.count) * itemHeight
         containerView.set(.height, to: totalHeight)
         
+        // Ensure corner radius is applied after layout
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.containerView.layoutIfNeeded()
+            self.blurEffectView.layer.cornerRadius = 16
+            self.blurEffectView.clipsToBounds = true
+        }
+        
         let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleBackgroundTap))
         tapGesture.cancelsTouchesInView = false
         addGestureRecognizer(tapGesture)
@@ -101,29 +111,93 @@ final class AddMenuView: UIView {
         // Get the frame of sourceView in parentView's coordinate system
         let sourceFrame = sourceView.convert(sourceView.bounds, to: parentView)
         
+        // Ensure menu doesn't get covered by navigation bar
+        // Calculate top position: ensure at least 8pt below the button, or below safe area if button is too high
+        let safeAreaTop = parentView.safeAreaInsets.top
+        let buttonBottom = sourceFrame.maxY
+        let spacing: CGFloat = 8
+        let calculatedTop = buttonBottom + spacing
+        
+        // Use safe area top anchor to ensure menu is always visible
+        // If calculated position is above safe area, place it below safe area with spacing
+        let topOffset = max(calculatedTop - safeAreaTop, spacing)
+        
         NSLayoutConstraint.activate([
             containerView.trailingAnchor.constraint(equalTo: parentView.trailingAnchor, constant: -16),
-            containerView.topAnchor.constraint(equalTo: parentView.topAnchor, constant: sourceFrame.maxY + 8)
+            containerView.topAnchor.constraint(equalTo: parentView.safeAreaLayoutGuide.topAnchor, constant: topOffset)
         ])
         
-        // Animate appearance
-        containerView.alpha = 0
-        containerView.transform = CGAffineTransform(scaleX: 0.8, y: 0.8)
+        // Ensure layout and corner radius are set before animation
+        containerView.layoutIfNeeded()
+        blurEffectView.layer.cornerRadius = 16
+        blurEffectView.clipsToBounds = true
         
-        UIView.animate(withDuration: 0.2, delay: 0, options: .curveEaseOut) {
-            self.containerView.alpha = 1
-            self.containerView.transform = .identity
+        // Set initial state for animation
+        containerView.alpha = 0
+        containerView.transform = CGAffineTransform(scaleX: 0.85, y: 0.85).translatedBy(x: 0, y: -10)
+        
+        // Animate container appearance with spring animation
+        UIView.animate(
+            withDuration: 0.35,
+            delay: 0,
+            usingSpringWithDamping: 0.75,
+            initialSpringVelocity: 0.5,
+            options: [.curveEaseOut, .allowUserInteraction],
+            animations: {
+                self.containerView.alpha = 1.0
+                self.containerView.transform = .identity
+            }
+        )
+        
+        // Animate menu items with staggered appearance
+        for (index, itemView) in itemViews.enumerated() {
+            itemView.alpha = 0
+            itemView.transform = CGAffineTransform(translationX: 0, y: -10)
+            
+            UIView.animate(
+                withDuration: 0.3,
+                delay: 0.05 + Double(index) * 0.03,
+                usingSpringWithDamping: 0.8,
+                initialSpringVelocity: 0.3,
+                options: [.curveEaseOut],
+                animations: {
+                    itemView.alpha = 1.0
+                    itemView.transform = .identity
+                }
+            )
         }
     }
     
     func hide(completion: (() -> Void)? = nil) {
-        UIView.animate(withDuration: 0.15, delay: 0, options: .curveEaseIn) {
-            self.containerView.alpha = 0
-            self.containerView.transform = CGAffineTransform(scaleX: 0.8, y: 0.8)
-        } completion: { _ in
-            self.removeFromSuperview()
-            completion?()
+        // Animate menu items disappearing first (reverse stagger)
+        for (index, itemView) in itemViews.enumerated().reversed() {
+            UIView.animate(
+                withDuration: 0.2,
+                delay: Double(itemViews.count - 1 - index) * 0.02,
+                options: [.curveEaseIn],
+                animations: {
+                    itemView.alpha = 0
+                    itemView.transform = CGAffineTransform(translationX: 0, y: -5)
+                }
+            )
         }
+        
+        // Animate container disappearing
+        UIView.animate(
+            withDuration: 0.25,
+            delay: 0.05,
+            usingSpringWithDamping: 0.9,
+            initialSpringVelocity: 0.5,
+            options: [.curveEaseIn],
+            animations: {
+                self.containerView.alpha = 0
+                self.containerView.transform = CGAffineTransform(scaleX: 0.85, y: 0.85).translatedBy(x: 0, y: -10)
+            },
+            completion: { _ in
+                self.removeFromSuperview()
+                completion?()
+            }
+        )
     }
     
     // MARK: - Actions
