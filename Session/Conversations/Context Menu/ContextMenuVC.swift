@@ -268,12 +268,8 @@ final class ContextMenuVC: UIViewController {
         let targetFrame: CGRect = self.targetFrame
         
         UIView.animate(withDuration: 0.3) { [weak self] in
-            self?.blurView.effect = UIBlurEffect(
-                style: (ThemeManager.currentTheme.interfaceStyle == .light ?
-                    .light :
-                    .dark
-                )
-            )
+            // Use liquid glass effect
+            self?.blurView.applyLiquidGlass(theme: ThemeManager.currentTheme)
         }
         
         UIView.animate(withDuration: 0.2) { [weak self] in
@@ -297,10 +293,8 @@ final class ContextMenuVC: UIViewController {
             completion: nil
         )
         
-        // Change the blur effect on theme change
-        ThemeManager.onThemeChange(observer: blurView) { [weak blurView] theme, _, _ in
-            blurView?.effect = UIBlurEffect(style: theme.blurStyle)
-        }
+        // Use liquid glass effect with theme observer
+        blurView.applyLiquidGlassWithObserver()
     }
     
     override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {

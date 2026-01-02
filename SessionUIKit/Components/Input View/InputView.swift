@@ -204,9 +204,8 @@ public final class InputView: UIView, InputViewButtonDelegate, InputTextViewDele
         result.addSubview(blurView)
         blurView.pin(to: result)
         
-        ThemeManager.onThemeChange(observer: blurView) { [weak blurView] theme, _, _ in
-            blurView?.effect = UIBlurEffect(style: theme.blurStyle)
-        }
+        // Use liquid glass effect instead of theme.blurStyle
+        blurView.applyLiquidGlassWithObserver()
         
         result.addSubview(mentionsView)
         mentionsView.pin(to: result)

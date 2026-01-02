@@ -41,6 +41,7 @@ public final class HomeVC: BaseVC, LibSessionRespondingViewController, UITableVi
     
     // MARK: - UI
     private var navBarProfileView: ProfilePictureView?
+    private var addMenuView: AddMenuView?
     
     private lazy var bannersStackView: UIStackView = {
         let result: UIStackView = UIStackView(arrangedSubviews: [
@@ -556,16 +557,23 @@ public final class HomeVC: BaseVC, LibSessionRespondingViewController, UITableVi
         leftBarButtonItem.isAccessibilityElement = true
         navigationItem.leftBarButtonItem = leftBarButtonItem
         
-        // Right bar button item - search button (only show if not in TabBar)
-        // Note: Search is now in TabBar, so we only show it if we're not in a TabBarController
-        if tabBarController == nil {
-            let rightBarButtonItem = UIBarButtonItem(image: Lucide.image(icon: .search, size: 24), style: .plain, target: self, action: #selector(showSearchUI))
-            rightBarButtonItem.accessibilityLabel = "Search button"
-            rightBarButtonItem.isAccessibilityElement = true
-            navigationItem.rightBarButtonItem = rightBarButtonItem
+        // Right bar button item - add button (with menu)
+        let addButton = UIButton(type: .system)
+        if let plusImage = UIImage(named: "Plus") {
+            addButton.setImage(plusImage.withRenderingMode(.alwaysTemplate), for: .normal)
         } else {
-            navigationItem.rightBarButtonItem = nil
+            addButton.setImage(UIImage(systemName: "plus"), for: .normal)
         }
+        addButton.themeTintColor = .textPrimary
+        addButton.frame = CGRect(x: 0, y: 0, width: 44, height: 44)
+        addButton.contentMode = .center
+        addButton.addTarget(self, action: #selector(toggleAddMenu), for: .touchUpInside)
+        addButton.accessibilityLabel = "Add menu button"
+        addButton.accessibilityIdentifier = "Add menu button"
+        
+        let rightBarButtonItem = UIBarButtonItem(customView: addButton)
+        rightBarButtonItem.isAccessibilityElement = true
+        navigationItem.rightBarButtonItem = rightBarButtonItem
     }
     
     // MARK: - UITableViewDataSource
@@ -845,6 +853,68 @@ public final class HomeVC: BaseVC, LibSessionRespondingViewController, UITableVi
     
     @objc private func createNewConversation() {
         viewModel.dependencies[singleton: .app].createNewConversation()
+    }
+    
+    @objc private func toggleAddMenu() {
+        // Dismiss existing menu if shown
+        if let existingMenu = addMenuView {
+            existingMenu.hide { [weak self] in
+                self?.addMenuView = nil
+            }
+            return
+        }
+        
+        // Create and show menu
+        let menuItems: [AddMenuView.MenuItem] = [
+            AddMenuView.MenuItem(
+                icon: UIImage(systemName: "person.2.fill") ?? UIImage(),
+                title: NSLocalizedString("发起群聊", comment: "Initiate Group Chat"),
+                action: { [weak self] in
+                    self?.addMenuView?.hide { [weak self] in
+                        self?.addMenuView = nil
+                    }
+                    // TODO: Implement group chat creation
+                }
+            ),
+            AddMenuView.MenuItem(
+                icon: UIImage(systemName: "person.badge.plus") ?? UIImage(),
+                title: NSLocalizedString("添加朋友", comment: "Add Friend"),
+                action: { [weak self] in
+                    self?.addMenuView?.hide { [weak self] in
+                        self?.addMenuView = nil
+                    }
+                    // TODO: Implement add friend
+                }
+            ),
+            AddMenuView.MenuItem(
+                icon: UIImage(systemName: "qrcode.viewfinder") ?? UIImage(),
+                title: NSLocalizedString("扫一扫", comment: "Scan QR Code"),
+                action: { [weak self] in
+                    self?.addMenuView?.hide { [weak self] in
+                        self?.addMenuView = nil
+                    }
+                    // TODO: Implement QR code scanning
+                }
+            ),
+            AddMenuView.MenuItem(
+                icon: UIImage(systemName: "creditcard.fill") ?? UIImage(),
+                title: NSLocalizedString("收付款", comment: "Receive/Pay"),
+                action: { [weak self] in
+                    self?.addMenuView?.hide { [weak self] in
+                        self?.addMenuView = nil
+                    }
+                    // TODO: Implement payment
+                }
+            )
+        ]
+        
+        let menuView = AddMenuView(items: menuItems)
+        addMenuView = menuView
+        
+        // Get the button view from navigation bar
+        if let addButton = navigationItem.rightBarButtonItem?.customView {
+            menuView.show(from: addButton, in: view)
+        }
     }
     
     @objc func applicationDidBecomeActive(_ notification: Notification) {

@@ -76,6 +76,8 @@
 		52FC0C982F07CA3D000803B2 /* MainTabBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52FC0C972F07CA3D000803B2 /* MainTabBarController.swift */; };
 		52FC0C9B2F07CA5B000803B2 /* ContactsViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52FC0C992F07CA5B000803B2 /* ContactsViewController.swift */; };
 		52FC0C9E2F07CA68000803B2 /* DiscoverViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52FC0C9C2F07CA68000803B2 /* DiscoverViewController.swift */; };
+		52FC0CA12F07D428000803B2 /* AddMenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52FC0C9F2F07D428000803B2 /* AddMenuView.swift */; };
+		52FC0CA32F07D9AD000803B2 /* UIVisualEffectView+Utilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52FC0CA22F07D9AD000803B2 /* UIVisualEffectView+Utilities.swift */; };
 		70377AAB1918450100CAF501 /* MobileCoreServices.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 70377AAA1918450100CAF501 /* MobileCoreServices.framework */; };
 		76C87F19181EFCE600C4ACAB /* MediaPlayer.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 76C87F18181EFCE600C4ACAB /* MediaPlayer.framework */; };
 		7B0EFDEE274F598600FFAAE7 /* TimestampUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B0EFDED274F598600FFAAE7 /* TimestampUtils.swift */; };
@@ -1540,6 +1542,8 @@
 		52FC0C972F07CA3D000803B2 /* MainTabBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabBarController.swift; sourceTree = "<group>"; };
 		52FC0C992F07CA5B000803B2 /* ContactsViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactsViewController.swift; sourceTree = "<group>"; };
 		52FC0C9C2F07CA68000803B2 /* DiscoverViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscoverViewController.swift; sourceTree = "<group>"; };
+		52FC0C9F2F07D428000803B2 /* AddMenuView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddMenuView.swift; sourceTree = "<group>"; };
+		52FC0CA22F07D9AD000803B2 /* UIVisualEffectView+Utilities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UIVisualEffectView+Utilities.swift"; sourceTree = "<group>"; };
 		70377AAA1918450100CAF501 /* MobileCoreServices.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MobileCoreServices.framework; path = System/Library/Frameworks/MobileCoreServices.framework; sourceTree = SDKROOT; };
 		76C87F18181EFCE600C4ACAB /* MediaPlayer.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MediaPlayer.framework; path = System/Library/Frameworks/MediaPlayer.framework; sourceTree = SDKROOT; };
 		7B0EFDED274F598600FFAAE7 /* TimestampUtils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimestampUtils.swift; sourceTree = "<group>"; };
@@ -2899,6 +2903,14 @@
 			path = Discover;
 			sourceTree = "<group>";
 		};
+		52FC0CA02F07D428000803B2 /* AddMenu */ = {
+			isa = PBXGroup;
+			children = (
+				52FC0C9F2F07D428000803B2 /* AddMenuView.swift */,
+			);
+			path = AddMenu;
+			sourceTree = "<group>";
+		};
 		76EB03C118170B33006006FC /* Utilities */ = {
 			isa = PBXGroup;
 			children = (
@@ -3589,6 +3601,7 @@
 		C331FFAE2558FA7700070591 /* Utilities */ = {
 			isa = PBXGroup;
 			children = (
+				52FC0CA22F07D9AD000803B2 /* UIVisualEffectView+Utilities.swift */,
 				948615C82ED7D63E000A5666 /* Publisher+Utilities.swift */,
 				94805EC72EB834CD0055EBBC /* UINavigationController+Utilities.swift */,
 				94B6BB012E3AE85800E718BB /* QRCode.swift */,
@@ -3722,6 +3735,7 @@
 		C360968E25AD16E8008B62B2 /* Home */ = {
 			isa = PBXGroup;
 			children = (
+				52FC0CA02F07D428000803B2 /* AddMenu */,
 				52FC0C9A2F07CA5B000803B2 /* Contacts */,
 				FED288EF2E4C239800C31171 /* App Review */,
 				7B8C44C328B49DA900FBE25F /* New Conversation */,
@@ -6648,6 +6662,7 @@
 				C331FFE32558FB0000070591 /* TabBar.swift in Sources */,
 				94805EC82EB834D40055EBBC /* UINavigationController+Utilities.swift in Sources */,
 				FD37E9D528A1FCE8003AE748 /* Theme+OceanLight.swift in Sources */,
+				52FC0CA32F07D9AD000803B2 /* UIVisualEffectView+Utilities.swift in Sources */,
 				FDF848F129406A30007DCAE5 /* Format.swift in Sources */,
 				94519A952E851BF500F02723 /* SessionProPaymentScreen+UpdatePlan.swift in Sources */,
 				942BA9C42E55AB54007C4595 /* UILabel+Utilities.swift in Sources */,
@@ -7299,6 +7314,7 @@
 				FD7115EB28C5D78E00B47552 /* ThreadSettingsViewModel.swift in Sources */,
 				B8041AA725C90927003C2166 /* TypingIndicatorCell.swift in Sources */,
 				7B4EF25A2934743000CB351D /* SessionTableViewTitleView.swift in Sources */,
+				52FC0CA12F07D428000803B2 /* AddMenuView.swift in Sources */,
 				942256A12C23F90700C0FDBF /* CustomTopTabBar.swift in Sources */,
 				FDFDE12A282D056B0098B17F /* MediaZoomAnimationController.swift in Sources */,
 				4C1885D2218F8E1C00B67051 /* PhotoGridViewCell.swift in Sources */,

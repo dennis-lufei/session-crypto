@@ -17,16 +17,7 @@ public class ModalActivityIndicatorViewController: OWSViewController {
     
     lazy var dimmingView: UIView = {
         let result = UIVisualEffectView()
-        
-        ThemeManager.onThemeChange(observer: result) { [weak result] theme, _, _ in
-            result?.effect = UIBlurEffect(
-                style: (theme.interfaceStyle == .light ?
-                    UIBlurEffect.Style.systemUltraThinMaterialLight :
-                    UIBlurEffect.Style.systemUltraThinMaterial
-                )
-            )
-        }
-        
+        result.applyLiquidGlassWithObserver()
         return result
     }()
     

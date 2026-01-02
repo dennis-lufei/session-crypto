@@ -203,9 +203,8 @@ public final class SearchResultsBar: UIView {
         addSubview(blurView)
         blurView.pin(to: self)
         
-        ThemeManager.onThemeChange(observer: blurView) { [weak blurView] theme, _, _ in
-            blurView?.effect = UIBlurEffect(style: theme.blurStyle)
-        }
+        // Use liquid glass effect instead of theme.blurStyle
+        blurView.applyLiquidGlassWithObserver()
         
         // Separator
         let separator = UIView()
