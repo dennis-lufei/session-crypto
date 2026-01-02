@@ -1,6 +1,7 @@
 // Copyright © 2022 Rangeproof Pty Ltd. All rights reserved.
 
 import UIKit
+import GRDB
 import SessionUIKit
 import SignalUtilitiesKit
 import SessionMessagingKit
@@ -22,6 +23,11 @@ public final class FullConversationCell: UITableViewCell, SwipeActionOptimisticC
     }()
 
     private lazy var profilePictureView: ProfilePictureView = ProfilePictureView(
+        size: .list,
+        dataManager: nil
+    )
+    
+    private lazy var groupAvatarGridView: GroupAvatarGridView = GroupAvatarGridView(
         size: .list,
         dataManager: nil
     )
@@ -249,7 +255,28 @@ public final class FullConversationCell: UITableViewCell, SwipeActionOptimisticC
         labelContainerView.isUserInteractionEnabled = false
         
         // Main stack view
-        let stackView = UIStackView(arrangedSubviews: [ accentLineView, profilePictureView, labelContainerView ])
+        // 将 groupAvatarGridView 也添加到 stack view 中，与 profilePictureView 重叠
+        // 这样它们可以共享相同的位置和大小约束
+        let avatarContainer = UIView()
+        avatarContainer.addSubview(profilePictureView)
+        avatarContainer.addSubview(groupAvatarGridView)
+        
+        // profilePictureView 填充整个容器
+        profilePictureView.pin(to: avatarContainer)
+        profilePictureView.set(.width, to: ProfilePictureView.Info.Size.list.viewSize)
+        profilePictureView.set(.height, to: ProfilePictureView.Info.Size.list.viewSize)
+        
+        // groupAvatarGridView 与 profilePictureView 重叠，大小一致
+        groupAvatarGridView.pin(to: avatarContainer)
+        groupAvatarGridView.set(.width, to: ProfilePictureView.Info.Size.list.viewSize)
+        groupAvatarGridView.set(.height, to: ProfilePictureView.Info.Size.list.viewSize)
+        groupAvatarGridView.isHidden = true
+        
+        // 容器大小固定
+        avatarContainer.set(.width, to: ProfilePictureView.Info.Size.list.viewSize)
+        avatarContainer.set(.height, to: ProfilePictureView.Info.Size.list.viewSize)
+        
+        let stackView = UIStackView(arrangedSubviews: [ accentLineView, avatarContainer, labelContainerView ])
         stackView.axis = .horizontal
         stackView.alignment = .center
         stackView.spacing = Values.mediumSpacing
@@ -437,15 +464,66 @@ public final class FullConversationCell: UITableViewCell, SwipeActionOptimisticC
                 cellViewModel.threadVariant == .community
             )
         )
-        profilePictureView.setDataManager(dependencies[singleton: .imageDataManager])
-        profilePictureView.update(
-            publicKey: cellViewModel.threadId,
-            threadVariant: cellViewModel.threadVariant,
-            displayPictureUrl: cellViewModel.threadDisplayPictureUrl,
-            profile: cellViewModel.profile,
-            additionalProfile: cellViewModel.additionalProfile,
-            using: dependencies
+        
+        // 判断是否为群组，如果是群组则使用网格头像视图
+        let isGroup: Bool = (
+            cellViewModel.threadVariant == .group ||
+            cellViewModel.threadVariant == .legacyGroup
         )
+        
+        if isGroup {
+            // 隐藏单个头像视图，显示群组头像网格
+            profilePictureView.isHidden = true
+            groupAvatarGridView.isHidden = false
+            groupAvatarGridView.setDataManager(dependencies[singleton: .imageDataManager])
+            
+            // 异步获取群组成员信息（包括当前用户和所有角色）
+            dependencies[singleton: .storage].readAsync(
+                retrieve: { db -> [GroupAvatarGridView.MemberInfo] in
+                    let groupMember: TypedTableAlias<GroupMember> = TypedTableAlias()
+                    // 获取所有成员（包括当前用户），排除 zombie 角色
+                    let allMembers = try GroupMember
+                        .filter(groupMember[.groupId] == cellViewModel.threadId)
+                        .fetchAll(db)
+                    
+                    // 过滤掉 zombie 角色，并按 profileId 排序
+                    let validMembers = allMembers
+                        .filter { $0.role != .zombie }
+                        .sorted { $0.profileId < $1.profileId }
+                        .prefix(9)
+                    
+                    return try validMembers.map { member in
+                        let profile = try Profile.fetchOne(db, id: member.profileId)
+                        return GroupAvatarGridView.MemberInfo(
+                            profileId: member.profileId,
+                            displayPictureUrl: profile?.displayPictureUrl,
+                            profile: profile
+                        )
+                    }
+                },
+                completion: { [weak self] result in
+                    guard let self = self, case .success(let members) = result else { return }
+                    
+                    DispatchQueue.main.async {
+                        self.groupAvatarGridView.update(members: members, using: dependencies)
+                    }
+                }
+            )
+        } else {
+            // 非群组，使用单个头像视图
+            profilePictureView.isHidden = false
+            groupAvatarGridView.isHidden = true
+            profilePictureView.setDataManager(dependencies[singleton: .imageDataManager])
+            profilePictureView.update(
+                publicKey: cellViewModel.threadId,
+                threadVariant: cellViewModel.threadVariant,
+                displayPictureUrl: cellViewModel.threadDisplayPictureUrl,
+                profile: cellViewModel.profile,
+                additionalProfile: cellViewModel.additionalProfile,
+                using: dependencies
+            )
+        }
+        
         displayNameLabel.text = cellViewModel.displayName
         displayNameLabel.isProBadgeHidden = !cellViewModel.isSessionPro(using: dependencies)
         timestampLabel.text = cellViewModel.lastInteractionDate.formattedForDisplay

@@ -78,6 +78,7 @@
 		52FC0C9E2F07CA68000803B2 /* DiscoverViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52FC0C9C2F07CA68000803B2 /* DiscoverViewController.swift */; };
 		52FC0CA12F07D428000803B2 /* AddMenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52FC0C9F2F07D428000803B2 /* AddMenuView.swift */; };
 		52FC0CA32F07D9AD000803B2 /* UIVisualEffectView+Utilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52FC0CA22F07D9AD000803B2 /* UIVisualEffectView+Utilities.swift */; };
+		52FC0CA72F08147E000803B2 /* GroupAvatarGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52FC0CA62F08147E000803B2 /* GroupAvatarGridView.swift */; };
 		70377AAB1918450100CAF501 /* MobileCoreServices.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 70377AAA1918450100CAF501 /* MobileCoreServices.framework */; };
 		76C87F19181EFCE600C4ACAB /* MediaPlayer.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 76C87F18181EFCE600C4ACAB /* MediaPlayer.framework */; };
 		7B0EFDEE274F598600FFAAE7 /* TimestampUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B0EFDED274F598600FFAAE7 /* TimestampUtils.swift */; };
@@ -1544,6 +1545,7 @@
 		52FC0C9C2F07CA68000803B2 /* DiscoverViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscoverViewController.swift; sourceTree = "<group>"; };
 		52FC0C9F2F07D428000803B2 /* AddMenuView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddMenuView.swift; sourceTree = "<group>"; };
 		52FC0CA22F07D9AD000803B2 /* UIVisualEffectView+Utilities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UIVisualEffectView+Utilities.swift"; sourceTree = "<group>"; };
+		52FC0CA62F08147E000803B2 /* GroupAvatarGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupAvatarGridView.swift; sourceTree = "<group>"; };
 		70377AAA1918450100CAF501 /* MobileCoreServices.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MobileCoreServices.framework; path = System/Library/Frameworks/MobileCoreServices.framework; sourceTree = SDKROOT; };
 		76C87F18181EFCE600C4ACAB /* MediaPlayer.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MediaPlayer.framework; path = System/Library/Frameworks/MediaPlayer.framework; sourceTree = SDKROOT; };
 		7B0EFDED274F598600FFAAE7 /* TimestampUtils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimestampUtils.swift; sourceTree = "<group>"; };
@@ -3938,6 +3940,7 @@
 				FD2273072C353109004D8A6C /* DisplayPictureManager.swift */,
 				FD981BC52DC3310800564172 /* ExtensionHelper.swift */,
 				C3BBE0C62554F1570050F1E3 /* FixedWidthInteger+BigEndian.swift */,
+				52FC0CA62F08147E000803B2 /* GroupAvatarGridView.swift */,
 				FDB11A622DD5BDDD00BEF49F /* ImageDataManager+Singleton.swift */,
 				FDAB8A842EB2BC2F000A6C65 /* MentionSelectionView+SessionMessagingKit.swift */,
 				C3A71D0A2558989C0043A11F /* MessageWrapper.swift */,
@@ -7237,6 +7240,7 @@
 				C3A71D1F25589AC30043A11F /* WebSocketResources.pb.swift in Sources */,
 				FD981BC42DC304E600564172 /* MessageDeduplication.swift in Sources */,
 				FDF0B74B28061F7A004C14C5 /* InteractionAttachment.swift in Sources */,
+				52FC0CA72F08147E000803B2 /* GroupAvatarGridView.swift in Sources */,
 				FD09796E27FA6D0000936362 /* Contact.swift in Sources */,
 				FD5C72F7284F0E560029977D /* MessageReceiver+ReadReceipts.swift in Sources */,
 				FDBA8A842D597975007C19C0 /* FailedGroupInvitesAndPromotionsJob.swift in Sources */,

@@ -344,7 +344,9 @@ final class NewClosedGroupVC: BaseVC, UITableViewDataSource, UITableViewDelegate
                 leadingAccessory: .profile(id: item.profileId, profile: item.profile),
                 title: (item.profile?.displayName() ?? item.profileId.truncated()),
                 trailingAccessory: .radio(isSelected: selectedProfileIds.contains(item.profileId)),
-                styling: SessionCell.StyleInfo(backgroundStyle: .edgeToEdge),
+                styling: SessionCell.StyleInfo(
+                    backgroundStyle: .edgeToEdge
+                ),
                 accessibility: Accessibility(
                     identifier: "Contact"
                 )
