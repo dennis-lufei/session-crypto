@@ -556,11 +556,16 @@ public final class HomeVC: BaseVC, LibSessionRespondingViewController, UITableVi
         leftBarButtonItem.isAccessibilityElement = true
         navigationItem.leftBarButtonItem = leftBarButtonItem
         
-        // Right bar button item - search button
-        let rightBarButtonItem = UIBarButtonItem(image: Lucide.image(icon: .search, size: 24), style: .plain, target: self, action: #selector(showSearchUI))
-        rightBarButtonItem.accessibilityLabel = "Search button"
-        rightBarButtonItem.isAccessibilityElement  = true
-        navigationItem.rightBarButtonItem = rightBarButtonItem
+        // Right bar button item - search button (only show if not in TabBar)
+        // Note: Search is now in TabBar, so we only show it if we're not in a TabBarController
+        if tabBarController == nil {
+            let rightBarButtonItem = UIBarButtonItem(image: Lucide.image(icon: .search, size: 24), style: .plain, target: self, action: #selector(showSearchUI))
+            rightBarButtonItem.accessibilityLabel = "Search button"
+            rightBarButtonItem.isAccessibilityElement = true
+            navigationItem.rightBarButtonItem = rightBarButtonItem
+        } else {
+            navigationItem.rightBarButtonItem = nil
+        }
     }
     
     // MARK: - UITableViewDataSource
@@ -807,12 +812,27 @@ public final class HomeVC: BaseVC, LibSessionRespondingViewController, UITableVi
     }
     
     @objc private func openSettings() {
-        let settingsViewController: SessionTableViewController = SessionTableViewController(
-            viewModel: SettingsViewModel(using: viewModel.dependencies)
-        )
-        let navigationController = StyledNavigationController(rootViewController: settingsViewController)
-        navigationController.modalPresentationStyle = .fullScreen
-        present(navigationController, animated: true, completion: nil)
+        // If we're in a TabBarController, switch to the Settings tab instead of presenting modally
+        if let tabBarController = tabBarController as? MainTabBarController,
+           let settingsNav = tabBarController.viewControllers?.first(where: { vc in
+               // Settings tab is the 4th tab (index 3) in MainTabBarController
+               if let nav = vc as? UINavigationController,
+                  let index = tabBarController.viewControllers?.firstIndex(of: nav),
+                  index == 3 {
+                   return true
+               }
+               return false
+           }) as? UINavigationController {
+            tabBarController.selectedViewController = settingsNav
+        } else {
+            // Fallback to modal presentation if not in TabBar
+            let settingsViewController: SessionTableViewController<SettingsViewModel> = SessionTableViewController(
+                viewModel: SettingsViewModel(using: viewModel.dependencies)
+            )
+            let navigationController = StyledNavigationController(rootViewController: settingsViewController)
+            navigationController.modalPresentationStyle = .fullScreen
+            present(navigationController, animated: true, completion: nil)
+        }
     }
     
     @objc private func showSearchUI() {

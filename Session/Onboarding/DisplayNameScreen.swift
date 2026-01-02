@@ -148,10 +148,8 @@ struct DisplayNameScreen: View {
                             .sinkUntilComplete()
                     }
                     
-                    // Go to the home screen
-                    let homeVC: HomeVC = HomeVC(using: dependencies)
-                    dependencies[singleton: .app].setHomeViewController(homeVC)
-                    self.host.controller?.navigationController?.setViewControllers([ homeVC ], animated: true)
+                    // Go to the home screen using MainTabBarController
+                    dependencies[singleton: .app].showHomeView()
                 }
             }
         }

@@ -162,9 +162,8 @@ struct PNModeScreen: View {
                         .sinkUntilComplete()
                 }
                 
-                let homeVC: HomeVC = HomeVC(using: dependencies)
-                dependencies[singleton: .app].setHomeViewController(homeVC)
-                self.host.controller?.navigationController?.setViewControllers([ homeVC ], animated: true)
+                // Use MainTabBarController instead of just HomeVC
+                dependencies[singleton: .app].showHomeView()
             }
         }
     }

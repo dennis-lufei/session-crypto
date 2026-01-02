@@ -911,11 +911,34 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterD
     }
 
     private func createNewDMFromDeepLink(sessionId: String) {
-        guard let homeViewController: HomeVC = (window?.rootViewController as? UINavigationController)?.visibleViewController as? HomeVC else {
-            return
+        // Try to get HomeVC from TabBarController structure (new structure)
+        var homeViewController: HomeVC?
+        
+        if let tabBarController = window?.rootViewController as? MainTabBarController,
+           let navController = tabBarController.viewControllers?.first as? UINavigationController,
+           let homeVC = navController.viewControllers.first as? HomeVC {
+            homeViewController = homeVC
+        }
+        // Fallback: try old structure (direct navigation controller)
+        else if let navController = window?.rootViewController as? UINavigationController,
+                let homeVC = navController.visibleViewController as? HomeVC {
+            homeViewController = homeVC
+        }
+        // Also check TopBannerController wrapper
+        else if let topBannerController = window?.rootViewController as? TopBannerController,
+                let tabBarController = topBannerController.children.first as? MainTabBarController,
+                let navController = tabBarController.viewControllers?.first as? UINavigationController,
+                let homeVC = navController.viewControllers.first as? HomeVC {
+            homeViewController = homeVC
+        }
+        else if let topBannerController = window?.rootViewController as? TopBannerController,
+                let navController = topBannerController.children.first as? UINavigationController,
+                let homeVC = navController.visibleViewController as? HomeVC {
+            homeViewController = homeVC
         }
         
-        homeViewController.createNewDMFromDeepLink(sessionId: sessionId)
+        guard let homeVC = homeViewController else { return }
+        homeVC.createNewDMFromDeepLink(sessionId: sessionId)
     }
         
     // MARK: - Call handling
@@ -1015,8 +1038,21 @@ private actor RootViewControllerCoordinator {
             
             /// Setup the `TopBannerController`
             let presentedViewController: UIViewController? = appDelegate.window?.rootViewController?.presentedViewController
+            
+            // If rootViewController is MainTabBarController, wrap it directly in TopBannerController
+            // Otherwise, wrap it in StyledNavigationController first (for backward compatibility)
+            let childViewController: UIViewController = {
+                if rootViewController is MainTabBarController {
+                    // MainTabBarController already has its own navigation structure, don't wrap it
+                    return rootViewController
+                } else {
+                    // Old structure: wrap single view controller in navigation controller
+                    return StyledNavigationController(rootViewController: rootViewController)
+                }
+            }()
+            
             let targetRootViewController: UIViewController = TopBannerController(
-                child: StyledNavigationController(rootViewController: rootViewController),
+                child: childViewController,
                 cachedWarning: dependencies[defaults: .appGroup, key: .topBannerWarningToShow]
                     .map { rawValue in TopBannerController.Warning(rawValue: rawValue) }
             )
@@ -1033,7 +1069,14 @@ private actor RootViewControllerCoordinator {
             /// **Note:** There is an annoying case when starting the app by interacting with a push notification where
             /// the `HomeVC` won't have completed loading it's view which means the `SessionApp.homeViewController`
             /// won't have been set - we set the value directly here to resolve this edge case
-            if let homeViewController: HomeVC = rootViewController as? HomeVC {
+            // Check if rootViewController is MainTabBarController (new structure)
+            if let tabBarController = rootViewController as? MainTabBarController,
+               let navController = tabBarController.viewControllers?.first as? UINavigationController,
+               let homeViewController = navController.viewControllers.first as? HomeVC {
+                dependencies[singleton: .app].setHomeViewController(homeViewController)
+            }
+            // Check if rootViewController is HomeVC directly (old structure - for backward compatibility)
+            else if let homeViewController: HomeVC = rootViewController as? HomeVC {
                 dependencies[singleton: .app].setHomeViewController(homeViewController)
             }
             
@@ -1101,11 +1144,20 @@ private actor RootViewControllerCoordinator {
                 
             case .completed:
                 await MainActor.run {
-                    /// We want to start observing the changes for the 'HomeVC' and want to wait until we actually get data back before we
-                    /// continue as we don't want to show a blank home screen
-                    let viewController: HomeVC = HomeVC(using: dependencies)
-                    viewController.afterInitialConversationsLoaded {
-                        setupComplete(viewController)
+                    /// Create MainTabBarController as the root view controller
+                    /// We want to wait until the HomeVC has loaded its initial conversations before we continue
+                    /// as we don't want to show a blank home screen
+                    let tabBarController = MainTabBarController(using: dependencies)
+                    
+                    // Get HomeVC from the first tab to set up the initial load callback
+                    if let navController = tabBarController.viewControllers?.first as? UINavigationController,
+                       let homeViewController = navController.viewControllers.first as? HomeVC {
+                        homeViewController.afterInitialConversationsLoaded {
+                            setupComplete(tabBarController)
+                        }
+                    } else {
+                        // Fallback: if we can't get HomeVC, just complete the setup
+                        setupComplete(tabBarController)
                     }
                 }
         }

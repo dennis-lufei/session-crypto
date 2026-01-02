@@ -73,6 +73,9 @@
 		4C6F527C20FFE8400097DEEE /* SignalUBSan.supp in Resources */ = {isa = PBXBuildFile; fileRef = 4C6F527B20FFE8400097DEEE /* SignalUBSan.supp */; };
 		4CA485BB2232339F004B9E7D /* PhotoCaptureViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CA485BA2232339F004B9E7D /* PhotoCaptureViewController.swift */; };
 		4CC613362227A00400E21A3A /* ConversationSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CC613352227A00400E21A3A /* ConversationSearch.swift */; };
+		52FC0C982F07CA3D000803B2 /* MainTabBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52FC0C972F07CA3D000803B2 /* MainTabBarController.swift */; };
+		52FC0C9B2F07CA5B000803B2 /* ContactsViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52FC0C992F07CA5B000803B2 /* ContactsViewController.swift */; };
+		52FC0C9E2F07CA68000803B2 /* DiscoverViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52FC0C9C2F07CA68000803B2 /* DiscoverViewController.swift */; };
 		70377AAB1918450100CAF501 /* MobileCoreServices.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 70377AAA1918450100CAF501 /* MobileCoreServices.framework */; };
 		76C87F19181EFCE600C4ACAB /* MediaPlayer.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 76C87F18181EFCE600C4ACAB /* MediaPlayer.framework */; };
 		7B0EFDEE274F598600FFAAE7 /* TimestampUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B0EFDED274F598600FFAAE7 /* TimestampUtils.swift */; };
@@ -1534,6 +1537,9 @@
 		4C6F527B20FFE8400097DEEE /* SignalUBSan.supp */ = {isa = PBXFileReference; lastKnownFileType = text; path = SignalUBSan.supp; sourceTree = "<group>"; };
 		4CA485BA2232339F004B9E7D /* PhotoCaptureViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoCaptureViewController.swift; sourceTree = "<group>"; };
 		4CC613352227A00400E21A3A /* ConversationSearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationSearch.swift; sourceTree = "<group>"; };
+		52FC0C972F07CA3D000803B2 /* MainTabBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabBarController.swift; sourceTree = "<group>"; };
+		52FC0C992F07CA5B000803B2 /* ContactsViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactsViewController.swift; sourceTree = "<group>"; };
+		52FC0C9C2F07CA68000803B2 /* DiscoverViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscoverViewController.swift; sourceTree = "<group>"; };
 		70377AAA1918450100CAF501 /* MobileCoreServices.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MobileCoreServices.framework; path = System/Library/Frameworks/MobileCoreServices.framework; sourceTree = SDKROOT; };
 		76C87F18181EFCE600C4ACAB /* MediaPlayer.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MediaPlayer.framework; path = System/Library/Frameworks/MediaPlayer.framework; sourceTree = SDKROOT; };
 		7B0EFDED274F598600FFAAE7 /* TimestampUtils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimestampUtils.swift; sourceTree = "<group>"; };
@@ -2877,6 +2883,22 @@
 			path = SessionShareExtension;
 			sourceTree = "<group>";
 		};
+		52FC0C9A2F07CA5B000803B2 /* Contacts */ = {
+			isa = PBXGroup;
+			children = (
+				52FC0C992F07CA5B000803B2 /* ContactsViewController.swift */,
+			);
+			path = Contacts;
+			sourceTree = "<group>";
+		};
+		52FC0C9D2F07CA68000803B2 /* Discover */ = {
+			isa = PBXGroup;
+			children = (
+				52FC0C9C2F07CA68000803B2 /* DiscoverViewController.swift */,
+			);
+			path = Discover;
+			sourceTree = "<group>";
+		};
 		76EB03C118170B33006006FC /* Utilities */ = {
 			isa = PBXGroup;
 			children = (
@@ -3700,12 +3722,15 @@
 		C360968E25AD16E8008B62B2 /* Home */ = {
 			isa = PBXGroup;
 			children = (
+				52FC0C9A2F07CA5B000803B2 /* Contacts */,
 				FED288EF2E4C239800C31171 /* App Review */,
 				7B8C44C328B49DA900FBE25F /* New Conversation */,
 				7B93D06827CF173D00811CB6 /* Message Requests */,
 				7BAF54CA27ACCEEC003D12F8 /* GlobalSearch */,
 				FDCDB8DF2811007F00352A0C /* HomeViewModel.swift */,
+				52FC0C972F07CA3D000803B2 /* MainTabBarController.swift */,
 				B8BB82A4238F627000BA5194 /* HomeVC.swift */,
+				52FC0C9D2F07CA68000803B2 /* Discover */,
 			);
 			path = Home;
 			sourceTree = "<group>";
@@ -7352,6 +7377,7 @@
 				FD71162228D983ED00B47552 /* QRCodeScanningViewController.swift in Sources */,
 				B8D84EA325DF745A005A043E /* LinkPreview+Convenience.swift in Sources */,
 				45C0DC1E1E69011F00E04C47 /* UIStoryboard+OWS.swift in Sources */,
+				52FC0C9B2F07CA5B000803B2 /* ContactsViewController.swift in Sources */,
 				FDE754B02C9B96B4002A2623 /* WebRTCSession.swift in Sources */,
 				B835246E25C38ABF0089A44F /* ConversationVC.swift in Sources */,
 				7B7037432834B81F000DCF35 /* ReactionContainerView.swift in Sources */,
@@ -7365,6 +7391,7 @@
 				7B71A98F2925E2A600E54854 /* SessionFooterView.swift in Sources */,
 				C374EEEB25DA3CA70073A857 /* ConversationTitleView.swift in Sources */,
 				FDE754E52C9BB012002A2623 /* BezierPathView.swift in Sources */,
+				52FC0C9E2F07CA68000803B2 /* DiscoverViewController.swift in Sources */,
 				FD716E7128505E5200C96BF4 /* MessageRequestsCell.swift in Sources */,
 				FDF848F329413DB0007DCAE5 /* ImagePickerHandler.swift in Sources */,
 				FDE754B22C9B96B4002A2623 /* WebRTC+Utilities.swift in Sources */,
@@ -7372,6 +7399,7 @@
 				9422569F2C23F8FE00C0FDBF /* ScanQRCodeScreen.swift in Sources */,
 				FD71160428C95B5600B47552 /* PhotoCollectionPickerViewModel.swift in Sources */,
 				FDE754B72C9B96BB002A2623 /* WebRTCSession+MessageHandling.swift in Sources */,
+				52FC0C982F07CA3D000803B2 /* MainTabBarController.swift in Sources */,
 				FD37EA1928AC5CCA003AE748 /* NotificationSoundViewModel.swift in Sources */,
 				FDE521942E050B1100061B8E /* DismissCallbackAVPlayerViewController.swift in Sources */,
 				7BAFA75A2AAEA281001DA43E /* LinkPreviewView_SwiftUI.swift in Sources */,
@@ -7871,6 +7899,7 @@
 				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				INFOPLIST_FILE = SessionShareExtension/Meta/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -7939,6 +7968,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				INFOPLIST_FILE = SessionShareExtension/Meta/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -9664,6 +9694,7 @@
 				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				INFOPLIST_FILE = SessionShareExtension/Meta/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -10263,6 +10294,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				INFOPLIST_FILE = SessionShareExtension/Meta/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",

@@ -63,10 +63,22 @@ public class SessionApp: SessionAppType {
             }
         }
         
-        let homeViewController: HomeVC = HomeVC(using: dependencies)
-        let navController: UINavigationController = StyledNavigationController(rootViewController: homeViewController)
-        (UIApplication.shared.delegate as? AppDelegate)?.window?.rootViewController = navController
-        self.homeViewController = homeViewController
+        let tabBarController = MainTabBarController(using: dependencies)
+        
+        // Wrap MainTabBarController in TopBannerController (same as AppDelegate setupComplete logic)
+        let targetRootViewController: UIViewController = TopBannerController(
+            child: tabBarController,
+            cachedWarning: dependencies[defaults: .appGroup, key: .topBannerWarningToShow]
+                .map { rawValue in TopBannerController.Warning(rawValue: rawValue) }
+        )
+        
+        (UIApplication.shared.delegate as? AppDelegate)?.window?.rootViewController = targetRootViewController
+        
+        // Get HomeVC from the tab bar controller
+        if let navController = tabBarController.viewControllers?.first as? UINavigationController,
+           let homeViewController = navController.viewControllers.first as? HomeVC {
+            self.homeViewController = homeViewController
+        }
     }
     
     @MainActor public func presentConversationCreatingIfNeeded(

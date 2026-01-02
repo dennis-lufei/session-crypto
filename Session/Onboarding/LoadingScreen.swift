@@ -147,10 +147,8 @@ struct LoadingScreen: View {
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             viewModel.completeRegistration {
-                // Go to the home screen
-                let homeVC: HomeVC = HomeVC(using: viewModel.dependencies)
-                viewModel.dependencies[singleton: .app].setHomeViewController(homeVC)
-                self.host.controller?.navigationController?.setViewControllers([ homeVC ], animated: true)
+                // Go to the home screen using MainTabBarController
+                viewModel.dependencies[singleton: .app].showHomeView()
             }
         }
     }
