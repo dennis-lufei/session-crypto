@@ -888,10 +888,24 @@ public final class HomeVC: BaseVC, LibSessionRespondingViewController, UITableVi
                 icon: UIImage(systemName: "person.badge.plus") ?? UIImage(),
                 title: NSLocalizedString("添加朋友", comment: "Add Friend"),
                 action: { [weak self] in
-                    self?.addMenuView?.hide { [weak self] in
-                        self?.addMenuView = nil
+                    guard let self = self else { return }
+                    let dependencies = self.viewModel.dependencies
+                    self.addMenuView?.hide { [weak self] in
+                        guard let self = self else { return }
+                        self.addMenuView = nil
+                        
+                        // Navigate to add friend page
+                        let title: String = NSLocalizedString("添加朋友", comment: "Add Friend")
+                        let viewController: SessionHostingViewController = SessionHostingViewController(
+                            rootView: AddFriendScreen(using: dependencies)
+                        )
+                        viewController.setNavBarTitle(title)
+                        viewController.setUpDismissingButton(on: .right)
+                        let navigationController = StyledNavigationController(rootViewController: viewController)
+                        navigationController.modalPresentationStyle = .fullScreen
+                        navigationController.modalPresentationCapturesStatusBarAppearance = true
+                        self.present(navigationController, animated: true, completion: nil)
                     }
-                    // TODO: Implement add friend
                 }
             ),
             AddMenuView.MenuItem(
