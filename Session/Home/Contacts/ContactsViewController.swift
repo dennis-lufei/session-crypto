@@ -16,6 +16,22 @@ public final class ContactsViewController: BaseVC {
     
     // MARK: - UI
     
+    private lazy var searchBar: ContactsSearchBar = {
+        let result = ContactsSearchBar()
+        result.themeTintColor = .textPrimary
+        result.themeBackgroundColor = .clear
+        result.delegate = self
+        result.searchTextField.accessibilityIdentifier = "Search contacts field"
+        result.searchTextField.themeAttributedPlaceholder = ThemedAttributedString(
+            string: NSLocalizedString("搜索", comment: "Search"),
+            attributes: [
+                .themeForegroundColor: ThemeValue.textSecondary
+            ]
+        )
+        result.set(.height, to: (36 + (Values.mediumSpacing * 2)))
+        return result
+    }()
+    
     private lazy var tableView: UITableView = {
         let result = UITableView()
         result.separatorStyle = .none
@@ -67,9 +83,18 @@ public final class ContactsViewController: BaseVC {
         
         setNavBarTitle(NSLocalizedString("通讯录", comment: "Contacts"))
         
+        // Search bar
+        view.addSubview(searchBar)
+        searchBar.pin(.top, to: .top, of: view, withInset: Values.smallSpacing)
+        searchBar.pin(.leading, to: .leading, of: view)
+        searchBar.pin(.trailing, to: .trailing, of: view)
+        
         // Table view
         view.addSubview(tableView)
-        tableView.pin(to: view)
+        tableView.pin(.top, to: .bottom, of: searchBar, withInset: Values.smallSpacing)
+        tableView.pin(.leading, to: .leading, of: view)
+        tableView.pin(.trailing, to: .trailing, of: view)
+        tableView.pin(.bottom, to: .bottom, of: view)
         
         // Empty state view
         view.addSubview(emptyStateView)
@@ -203,6 +228,30 @@ extension ContactsViewController: UITableViewDelegate {
     }
 }
 
+// MARK: - UISearchBarDelegate
+
+extension ContactsViewController: UISearchBarDelegate {
+    public func searchBar(_ searchBar: UISearchBar, textDidChange searchText: String) {
+        viewModel.updateSearchText(searchText)
+    }
+    
+    public func searchBarShouldBeginEditing(_ searchBar: UISearchBar) -> Bool {
+        searchBar.setShowsCancelButton(true, animated: true)
+        return true
+    }
+    
+    public func searchBarShouldEndEditing(_ searchBar: UISearchBar) -> Bool {
+        searchBar.setShowsCancelButton(false, animated: true)
+        return true
+    }
+    
+    public func searchBarCancelButtonClicked(_ searchBar: UISearchBar) {
+        searchBar.text = ""
+        searchBar.resignFirstResponder()
+        viewModel.updateSearchText("")
+    }
+}
+
 // MARK: - ContactsViewModel
 
 private final class ContactsViewModel: ObservableObject {
@@ -254,6 +303,7 @@ private final class ContactsViewModel: ObservableObject {
                 Log.error("[ContactsViewModel] Contacts observation failed: \(error)")
             },
             onChange: { [weak self] viewModels in
+                self?.allContacts = viewModels
                 self?.updateSections(contactViewModels: viewModels)
             }
         )
@@ -310,18 +360,26 @@ private final class ContactsViewModel: ObservableObject {
         )
     }
     
-    private var lastContactViewModels: [SessionThreadViewModel] = []
+    func updateSearchText(_ text: String) {
+        searchText = text
+        updateSections(contactViewModels: nil)
+    }
     
     private func updateSections(contactViewModels: [SessionThreadViewModel]?) {
-        let viewModels = contactViewModels ?? lastContactViewModels
+        let viewModels = contactViewModels ?? allContacts
         if contactViewModels != nil {
-            lastContactViewModels = viewModels
+            allContacts = viewModels
+        }
+        
+        // Filter contacts by search text if needed
+        let filteredContacts = searchText.isEmpty ? viewModels : viewModels.filter { contact in
+            contact.displayName.lowercased().contains(searchText.lowercased())
         }
         
         let nonalphabeticNameTitle: String = "#" // stringlint:ignore
         
         // Sort contacts first, then group by first letter
-        let sortedContacts = viewModels.sorted { lhs, rhs in
+        let sortedContacts = filteredContacts.sorted { lhs, rhs in
             lhs.displayName.lowercased() < rhs.displayName.lowercased()
         }
         
