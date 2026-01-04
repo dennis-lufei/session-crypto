@@ -83,13 +83,13 @@ public final class ContactsViewController: BaseVC {
         
         // Search bar
         view.addSubview(searchBar)
-        searchBar.pin(.top, to: .top, of: view.safeAreaLayoutGuide, withInset: Values.smallSpacing)
+        searchBar.pin(.top, to: .top, of: view.safeAreaLayoutGuide, withInset: 0.0)
         searchBar.pin(.leading, to: .leading, of: view)
         searchBar.pin(.trailing, to: .trailing, of: view)
         
         // Table view
         view.addSubview(tableView)
-        tableView.pin(.top, to: .bottom, of: searchBar, withInset: Values.smallSpacing)
+        tableView.pin(.top, to: .bottom, of: searchBar, withInset: 0.0)
         tableView.pin(.leading, to: .leading, of: view)
         tableView.pin(.trailing, to: .trailing, of: view)
         tableView.pin(.bottom, to: .bottom, of: view)
