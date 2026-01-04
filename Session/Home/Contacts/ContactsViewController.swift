@@ -21,6 +21,7 @@ public final class ContactsViewController: BaseVC {
         result.separatorStyle = .none
         result.themeBackgroundColor = .clear
         result.showsVerticalScrollIndicator = false
+        result.register(view: MessageRequestsCell.self)
         result.register(view: FullConversationCell.self)
         result.dataSource = self
         result.delegate = self
@@ -91,9 +92,11 @@ public final class ContactsViewController: BaseVC {
     }
     
     private func updateEmptyState() {
-        let isEmpty = viewModel.sections.isEmpty || 
-            viewModel.sections.allSatisfy { $0.elements.isEmpty }
-        emptyStateView.isHidden = !isEmpty
+        // Check if we have any contact sections (excluding message requests section)
+        let hasContacts = viewModel.sections.contains { section in
+            section.messageRequestCount == nil && !section.elements.isEmpty
+        }
+        emptyStateView.isHidden = hasContacts
     }
 }
 
@@ -106,13 +109,27 @@ extension ContactsViewController: UITableViewDataSource {
     
     public func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         guard section < viewModel.sections.count else { return 0 }
-        return viewModel.sections[section].elements.count
+        let sectionModel = viewModel.sections[section]
+        // Message requests section has 1 row, contact sections have their elements count
+        if sectionModel.messageRequestCount != nil {
+            return 1
+        }
+        return sectionModel.elements.count
     }
     
     public func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let section = viewModel.sections[indexPath.section]
-        let threadViewModel = section.elements[indexPath.row]
         
+        // Check if this is a message requests section
+        if let messageRequestCount = section.messageRequestCount {
+            let cell: MessageRequestsCell = tableView.dequeue(type: MessageRequestsCell.self, for: indexPath)
+            cell.accessibilityIdentifier = "Message requests banner"
+            cell.isAccessibilityElement = true
+            cell.update(with: messageRequestCount)
+            return cell
+        }
+        
+        let threadViewModel = section.elements[indexPath.row]
         let cell: FullConversationCell = tableView.dequeue(type: FullConversationCell.self, for: indexPath)
         cell.update(with: threadViewModel, using: dependencies)
         cell.accessibilityIdentifier = "Contact list item"
@@ -129,8 +146,17 @@ extension ContactsViewController: UITableViewDelegate {
         tableView.deselectRow(at: indexPath, animated: true)
         
         let section = viewModel.sections[indexPath.section]
-        let threadViewModel = section.elements[indexPath.row]
         
+        // Handle message requests section
+        if section.messageRequestCount != nil {
+            let viewController: SessionTableViewController = SessionTableViewController(
+                viewModel: MessageRequestsViewModel(using: dependencies)
+            )
+            navigationController?.pushViewController(viewController, animated: true)
+            return
+        }
+        
+        let threadViewModel = section.elements[indexPath.row]
         let viewController = ConversationVC(
             threadId: threadViewModel.threadId,
             threadVariant: threadViewModel.threadVariant,
@@ -146,7 +172,10 @@ extension ContactsViewController: UITableViewDelegate {
 private final class ContactsViewModel: ObservableObject {
     @Published private(set) var sections: [ContactsSectionModel] = []
     let dependencies: Dependencies
-    private var cancellable: DatabaseCancellable?
+    private var contactsCancellable: DatabaseCancellable?
+    private var messageRequestCancellable: DatabaseCancellable?
+    private var messageRequestCount: Int = 0
+    private var hasHiddenMessageRequests: Bool = false
     
     init(using dependencies: Dependencies) {
         self.dependencies = dependencies
@@ -154,7 +183,8 @@ private final class ContactsViewModel: ObservableObject {
     }
     
     private func setupObservation() {
-        let observation = ValueObservation.trackingConstantRegion { [dependencies] db -> [SessionThreadViewModel] in
+        // Observe contacts
+        let contactsObservation = ValueObservation.trackingConstantRegion { [dependencies] db -> [SessionThreadViewModel] in
             let userSessionId = dependencies[cache: .general].sessionId
             let contact: TypedTableAlias<Contact> = TypedTableAlias()
             
@@ -180,42 +210,114 @@ private final class ContactsViewModel: ObservableObject {
                 )
                 .fetchAll(db)
         }
-        .map { [dependencies] viewModels -> [ContactsSectionModel] in
-            // Group contacts by first letter
-            let grouped = Dictionary(grouping: viewModels) { viewModel -> String in
-                let displayName = viewModel.displayName
-                let firstChar = String(displayName.prefix(1)).uppercased()
-                // Check if it's a letter, otherwise group under "#"
-                return firstChar.rangeOfCharacter(from: .letters) != nil ? firstChar : "#"
-            }
-            
-            return grouped
-                .sorted { pair1, pair2 -> Bool in
-                    let key1 = pair1.key
-                    let key2 = pair2.key
-                    // Sort "#" to the end
-                    if key1 == "#" { return false }
-                    if key2 == "#" { return true }
-                    return key1 < key2
-                }
-                .map { key, values in
-                    ContactsSectionModel(
-                        title: key,
-                        elements: values.sorted { $0.displayName < $1.displayName }
-                    )
-                }
-        }
         
-        cancellable = dependencies[singleton: .storage].start(
-            observation,
+        contactsCancellable = dependencies[singleton: .storage].start(
+            contactsObservation,
             scheduling: .async(onQueue: .main),
             onError: { error in
-                Log.error("[ContactsViewModel] Observation failed: \(error)")
+                Log.error("[ContactsViewModel] Contacts observation failed: \(error)")
             },
-            onChange: { [weak self] sections in
-                self?.sections = sections
+            onChange: { [weak self] viewModels in
+                self?.updateSections(contactViewModels: viewModels)
             }
         )
+        
+        // Observe message request count
+        let messageRequestObservation = ValueObservation.trackingConstantRegion { [dependencies] db -> (Int, Bool) in
+            let hasHidden = dependencies.mutate(cache: .libSession) { libSession in
+                libSession.get(.hasHiddenMessageRequests)
+            }
+            
+            struct ThreadIdVariant: Decodable, Hashable, FetchableRecord {
+                let id: String
+                let variant: SessionThread.Variant
+            }
+            
+            let potentialMessageRequestThreadInfo: Set<ThreadIdVariant> = try SessionThread
+                .select(.id, .variant)
+                .filter(
+                    SessionThread.Columns.variant == SessionThread.Variant.contact ||
+                    SessionThread.Columns.variant == SessionThread.Variant.group
+                )
+                .asRequest(of: ThreadIdVariant.self)
+                .fetchSet(db)
+            
+            let messageRequestThreadIds: Set<String> = Set(
+                dependencies.mutate(cache: .libSession) { libSession in
+                    potentialMessageRequestThreadInfo.compactMap {
+                        guard libSession.isMessageRequest(threadId: $0.id, threadVariant: $0.variant) else {
+                            return nil
+                        }
+                        return $0.id
+                    }
+                }
+            )
+            
+            let count = try SessionThread
+                .unreadMessageRequestsQuery(messageRequestThreadIds: messageRequestThreadIds)
+                .fetchCount(db)
+            
+            return (count, hasHidden)
+        }
+        
+        messageRequestCancellable = dependencies[singleton: .storage].start(
+            messageRequestObservation,
+            scheduling: .async(onQueue: .main),
+            onError: { error in
+                Log.error("[ContactsViewModel] Message request observation failed: \(error)")
+            },
+            onChange: { [weak self] result in
+                self?.messageRequestCount = result.0
+                self?.hasHiddenMessageRequests = result.1
+                self?.updateSections(contactViewModels: nil)
+            }
+        )
+    }
+    
+    private var lastContactViewModels: [SessionThreadViewModel] = []
+    
+    private func updateSections(contactViewModels: [SessionThreadViewModel]?) {
+        let viewModels = contactViewModels ?? lastContactViewModels
+        if contactViewModels != nil {
+            lastContactViewModels = viewModels
+        }
+        
+        // Group contacts by first letter
+        let grouped = Dictionary(grouping: viewModels) { viewModel -> String in
+            let displayName = viewModel.displayName
+            let firstChar = String(displayName.prefix(1)).uppercased()
+            // Check if it's a letter, otherwise group under "#"
+            return firstChar.rangeOfCharacter(from: .letters) != nil ? firstChar : "#"
+        }
+        
+        var contactSections = grouped
+            .sorted { pair1, pair2 -> Bool in
+                let key1 = pair1.key
+                let key2 = pair2.key
+                // Sort "#" to the end
+                if key1 == "#" { return false }
+                if key2 == "#" { return true }
+                return key1 < key2
+            }
+            .map { key, values in
+                ContactsSectionModel(
+                    title: key,
+                    elements: values.sorted { $0.displayName < $1.displayName },
+                    messageRequestCount: nil
+                )
+            }
+        
+        // Add message requests section at the beginning if needed
+        if !hasHiddenMessageRequests && messageRequestCount > 0 {
+            let messageRequestSection = ContactsSectionModel(
+                title: "",
+                elements: [],
+                messageRequestCount: messageRequestCount
+            )
+            contactSections.insert(messageRequestSection, at: 0)
+        }
+        
+        self.sections = contactSections
     }
 }
 
@@ -224,6 +326,7 @@ private final class ContactsViewModel: ObservableObject {
 private struct ContactsSectionModel {
     let title: String
     let elements: [SessionThreadViewModel]
+    let messageRequestCount: Int? // nil表示不显示消息请求，非nil表示要显示消息请求cell
 }
 
 

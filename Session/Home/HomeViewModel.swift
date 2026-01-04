@@ -566,20 +566,6 @@ public class HomeViewModel: NavigatableStateHolder {
         let userSessionId: SessionId = viewModel.dependencies[cache: .general].sessionId
         
         return [
-            /// If the message request section is hidden or there are no unread message requests then hide the message request banner
-            (state.hasHiddenMessageRequests || state.unreadMessageRequestThreadCount == 0 ?
-                [] :
-                [SectionModel(
-                    section: .messageRequests,
-                    elements: [
-                        SessionThreadViewModel(
-                            threadId: SessionThreadViewModel.messageRequestsSectionId,
-                            unreadCount: UInt(state.unreadMessageRequestThreadCount),
-                            using: viewModel.dependencies
-                        )
-                    ]
-                )]
-            ),
             [
                 SectionModel(
                     section: .threads,

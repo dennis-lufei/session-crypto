@@ -100,7 +100,6 @@ public final class HomeVC: BaseVC, LibSessionRespondingViewController, UITableVi
         result.separatorStyle = .none
         result.themeBackgroundColor = .clear
         result.showsVerticalScrollIndicator = false
-        result.register(view: MessageRequestsCell.self)
         result.register(view: FullConversationCell.self)
         result.dataSource = self
         result.delegate = self
@@ -589,14 +588,6 @@ public final class HomeVC: BaseVC, LibSessionRespondingViewController, UITableVi
         let section: HomeViewModel.SectionModel = sections[indexPath.section]
         
         switch section.model {
-            case .messageRequests:
-                let threadViewModel: SessionThreadViewModel = section.elements[indexPath.row]
-                let cell: MessageRequestsCell = tableView.dequeue(type: MessageRequestsCell.self, for: indexPath)
-                cell.accessibilityIdentifier = "Message requests banner"
-                cell.isAccessibilityElement = true
-                cell.update(with: Int(threadViewModel.threadUnreadCount ?? 0))
-                return cell
-                
             case .threads:
                 let threadViewModel: SessionThreadViewModel = section.elements[indexPath.row]
                 let cell: FullConversationCell = tableView.dequeue(type: FullConversationCell.self, for: indexPath)
@@ -653,12 +644,6 @@ public final class HomeVC: BaseVC, LibSessionRespondingViewController, UITableVi
         let section: HomeViewModel.SectionModel = sections[indexPath.section]
         
         switch section.model {
-            case .messageRequests:
-                let viewController: SessionTableViewController = SessionTableViewController(
-                    viewModel: MessageRequestsViewModel(using: viewModel.dependencies)
-                )
-                self.navigationController?.pushViewController(viewController, animated: true)
-                
             case .threads:
                 let threadViewModel: SessionThreadViewModel = section.elements[indexPath.row]
                 let viewController: ConversationVC = ConversationVC(
@@ -724,20 +709,6 @@ public final class HomeVC: BaseVC, LibSessionRespondingViewController, UITableVi
         let threadViewModel: SessionThreadViewModel = section.elements[indexPath.row]
         
         switch section.model {
-            case .messageRequests:
-                return UIContextualAction.configuration(
-                    for: UIContextualAction.generateSwipeActions(
-                        [.hide],
-                        for: .trailing,
-                        indexPath: indexPath,
-                        tableView: tableView,
-                        threadViewModel: threadViewModel,
-                        viewController: self,
-                        navigatableStateHolder: viewModel,
-                        using: viewModel.dependencies
-                    )
-                )
-                
             case .threads:
                 let sessionIdPrefix: SessionId.Prefix? = try? SessionId.Prefix(from: threadViewModel.threadId)
                 
