@@ -131,7 +131,7 @@ extension ContactsViewController: UITableViewDataSource {
         
         let threadViewModel = section.elements[indexPath.row]
         let cell: FullConversationCell = tableView.dequeue(type: FullConversationCell.self, for: indexPath)
-        cell.update(with: threadViewModel, using: dependencies)
+        cell.updateForDefaultContacts(with: threadViewModel, using: dependencies)
         cell.accessibilityIdentifier = "Contact list item"
         cell.accessibilityLabel = threadViewModel.displayName
         
@@ -142,6 +142,42 @@ extension ContactsViewController: UITableViewDataSource {
 // MARK: - UITableViewDelegate
 
 extension ContactsViewController: UITableViewDelegate {
+    public func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
+        let sectionModel = viewModel.sections[section]
+        
+        // Don't show header for message requests section or empty sections
+        if sectionModel.messageRequestCount != nil || sectionModel.title.isEmpty || sectionModel.elements.isEmpty {
+            return nil
+        }
+        
+        let titleLabel = UILabel()
+        titleLabel.font = .systemFont(ofSize: Values.smallFontSize)
+        titleLabel.themeTextColor = .textPrimary
+        titleLabel.text = sectionModel.title
+        
+        let container = UIView()
+        container.themeBackgroundColor = .backgroundPrimary
+        container.addSubview(titleLabel)
+        
+        titleLabel.pin(.top, to: .top, of: container, withInset: Values.verySmallSpacing)
+        titleLabel.pin(.bottom, to: .bottom, of: container, withInset: -Values.verySmallSpacing)
+        titleLabel.pin(.leading, to: .leading, of: container, withInset: Values.largeSpacing)
+        titleLabel.pin(.trailing, to: .trailing, of: container, withInset: -Values.largeSpacing)
+        
+        return container
+    }
+    
+    public func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
+        let sectionModel = viewModel.sections[section]
+        
+        // Don't show header for message requests section or empty sections
+        if sectionModel.messageRequestCount != nil || sectionModel.title.isEmpty || sectionModel.elements.isEmpty {
+            return 0
+        }
+        
+        return UITableView.automaticDimension
+    }
+    
     public func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         
@@ -282,12 +318,25 @@ private final class ContactsViewModel: ObservableObject {
             lastContactViewModels = viewModels
         }
         
-        // Group contacts by first letter
-        let grouped = Dictionary(grouping: viewModels) { viewModel -> String in
-            let displayName = viewModel.displayName
-            let firstChar = String(displayName.prefix(1)).uppercased()
-            // Check if it's a letter, otherwise group under "#"
-            return firstChar.rangeOfCharacter(from: .letters) != nil ? firstChar : "#"
+        let nonalphabeticNameTitle: String = "#" // stringlint:ignore
+        
+        // Sort contacts first, then group by first letter
+        let sortedContacts = viewModels.sorted { lhs, rhs in
+            lhs.displayName.lowercased() < rhs.displayName.lowercased()
+        }
+        
+        // Group contacts by first letter (using transliteration for Chinese, etc.)
+        let grouped = Dictionary(grouping: sortedContacts) { viewModel -> String in
+            let displayName = NSMutableString(string: viewModel.displayName)
+            CFStringTransform(displayName, nil, kCFStringTransformToLatin, false)
+            CFStringTransform(displayName, nil, kCFStringTransformStripDiacritics, false)
+            
+            let initialCharacter: String = (displayName.length > 0 ? displayName.substring(to: 1) : "")
+            let section: String = (initialCharacter.capitalized.isSingleAlphabet ?
+                initialCharacter.capitalized :
+                nonalphabeticNameTitle
+            )
+            return section
         }
         
         var contactSections = grouped
@@ -295,14 +344,14 @@ private final class ContactsViewModel: ObservableObject {
                 let key1 = pair1.key
                 let key2 = pair2.key
                 // Sort "#" to the end
-                if key1 == "#" { return false }
-                if key2 == "#" { return true }
+                if key1 == nonalphabeticNameTitle { return false }
+                if key2 == nonalphabeticNameTitle { return true }
                 return key1 < key2
             }
             .map { key, values in
                 ContactsSectionModel(
                     title: key,
-                    elements: values.sorted { $0.displayName < $1.displayName },
+                    elements: values,
                     messageRequestCount: nil
                 )
             }
