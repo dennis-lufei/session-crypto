@@ -2,13 +2,19 @@
 
 import UIKit
 import Lucide
+import GRDB
 import SessionUIKit
 import SessionUtilitiesKit
 import SessionMessagingKit
+import SignalUtilitiesKit
 
 /// Main TabBar Controller similar to App Store style
 public final class MainTabBarController: UITabBarController {
     private let dependencies: Dependencies
+    private var messageRequestCancellable: DatabaseCancellable?
+    private var chatUnreadCancellable: DatabaseCancellable?
+    private weak var contactsTabBarItem: UITabBarItem?
+    private weak var chatTabBarItem: UITabBarItem?
     
     // MARK: - Initialization
     
@@ -96,20 +102,24 @@ public final class MainTabBarController: UITabBarController {
         // Tab 1: 聊天 (Chat)
         let chatVC = HomeVC(using: dependencies)
         let chatNav = StyledNavigationController(rootViewController: chatVC)
-        chatNav.tabBarItem = UITabBarItem(
+        let chatTabBarItem = UITabBarItem(
             title: NSLocalizedString("聊天", comment: "Chat tab"),
             image: UIImage(systemName: "message.fill"),
             selectedImage: UIImage(systemName: "message.fill")
         )
+        chatNav.tabBarItem = chatTabBarItem
+        self.chatTabBarItem = chatTabBarItem
         
         // Tab 2: 通讯录 (Contacts)
         let contactsVC = ContactsViewController(using: dependencies)
         let contactsNav = StyledNavigationController(rootViewController: contactsVC)
-        contactsNav.tabBarItem = UITabBarItem(
+        let contactsTabBarItem = UITabBarItem(
             title: NSLocalizedString("通讯录", comment: "Contacts tab"),
             image: UIImage(systemName: "person.2.fill"),
             selectedImage: UIImage(systemName: "person.2.fill")
         )
+        contactsNav.tabBarItem = contactsTabBarItem
+        self.contactsTabBarItem = contactsTabBarItem
         
         // Tab 3: 发现 (Discover)
         let discoverVC = DiscoverViewController(using: dependencies)
@@ -147,6 +157,99 @@ public final class MainTabBarController: UITabBarController {
             settingsNav,
             searchNav
         ]
+        
+        setupMessageRequestObservation()
+        setupChatUnreadObservation()
+    }
+    
+    // MARK: - Chat Unread Badge
+    
+    private func setupChatUnreadObservation() {
+        let chatUnreadObservation = ValueObservation.trackingConstantRegion { [dependencies] db -> Int in
+            try Interaction.fetchAppBadgeUnreadCount(ObservingDatabase.create(db, using: dependencies), using: dependencies)
+        }
+        
+        chatUnreadCancellable = dependencies[singleton: .storage].start(
+            chatUnreadObservation,
+            scheduling: .async(onQueue: .main),
+            onError: { error in
+                Log.error("[MainTabBarController] Chat unread observation failed: \(error)")
+            },
+            onChange: { [weak self] count in
+                self?.updateChatUnreadBadge(count: count)
+            }
+        )
+    }
+    
+    private func updateChatUnreadBadge(count: Int) {
+        if count > 0 {
+            chatTabBarItem?.badgeValue = "\(count)"
+        } else {
+            chatTabBarItem?.badgeValue = nil
+        }
+    }
+    
+    // MARK: - Message Request Badge
+    
+    private func setupMessageRequestObservation() {
+        let messageRequestObservation = ValueObservation.trackingConstantRegion { [dependencies] db -> Int in
+            let hasHidden = dependencies.mutate(cache: .libSession) { libSession in
+                libSession.get(.hasHiddenMessageRequests)
+            }
+            
+            // If message requests are hidden, return 0
+            guard !hasHidden else { return 0 }
+            
+            struct ThreadIdVariant: Decodable, Hashable, FetchableRecord {
+                let id: String
+                let variant: SessionThread.Variant
+            }
+            
+            let potentialMessageRequestThreadInfo: Set<ThreadIdVariant> = try SessionThread
+                .select(.id, .variant)
+                .filter(
+                    SessionThread.Columns.variant == SessionThread.Variant.contact ||
+                    SessionThread.Columns.variant == SessionThread.Variant.group
+                )
+                .asRequest(of: ThreadIdVariant.self)
+                .fetchSet(db)
+            
+            let messageRequestThreadIds: Set<String> = Set(
+                dependencies.mutate(cache: .libSession) { libSession in
+                    potentialMessageRequestThreadInfo.compactMap {
+                        guard libSession.isMessageRequest(threadId: $0.id, threadVariant: $0.variant) else {
+                            return nil
+                        }
+                        return $0.id
+                    }
+                }
+            )
+            
+            let count = try SessionThread
+                .unreadMessageRequestsQuery(messageRequestThreadIds: messageRequestThreadIds)
+                .fetchCount(db)
+            
+            return count
+        }
+        
+        messageRequestCancellable = dependencies[singleton: .storage].start(
+            messageRequestObservation,
+            scheduling: .async(onQueue: .main),
+            onError: { error in
+                Log.error("[MainTabBarController] Message request observation failed: \(error)")
+            },
+            onChange: { [weak self] count in
+                self?.updateMessageRequestBadge(count: count)
+            }
+        )
+    }
+    
+    private func updateMessageRequestBadge(count: Int) {
+        if count > 0 {
+            contactsTabBarItem?.badgeValue = "\(count)"
+        } else {
+            contactsTabBarItem?.badgeValue = nil
+        }
     }
 }
 
