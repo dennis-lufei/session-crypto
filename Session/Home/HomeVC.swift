@@ -358,6 +358,7 @@ public final class HomeVC: BaseVC, LibSessionRespondingViewController, UITableVi
         view.addSubview(newConversationButton)
         newConversationButton.center(.horizontal, in: view)
         newConversationButton.pin(.bottom, to: .bottom, of: view.safeAreaLayoutGuide, withInset: -Values.smallSpacing)
+        newConversationButton.isHidden = true
         
         // Preview prompt
         view.addSubview(appReviewPrompt)
@@ -552,10 +553,8 @@ public final class HomeVC: BaseVC, LibSessionRespondingViewController, UITableVi
         pathStatusView.pin(.trailing, to: .trailing, of: profilePictureViewContainer)
         pathStatusView.pin(.bottom, to: .bottom, of: profilePictureViewContainer)
         
-        // Left bar button item
-        let leftBarButtonItem = UIBarButtonItem(customView: profilePictureViewContainer)
-        leftBarButtonItem.isAccessibilityElement = true
-        navigationItem.leftBarButtonItem = leftBarButtonItem
+        // Left bar button item - removed
+        navigationItem.leftBarButtonItem = nil
         
         // Right bar button item - add button (with menu)
         let addButton = UIButton(type: .system)
