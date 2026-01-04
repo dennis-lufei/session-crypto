@@ -21,6 +21,7 @@ public final class ContactsViewController: BaseVC {
         result.themeTintColor = .textPrimary
         result.delegate = self
         result.searchTextField.accessibilityIdentifier = "Search contacts field"
+        result.searchTextField.clearButtonMode = .never
         result.searchTextField.themeAttributedPlaceholder = ThemedAttributedString(
             string: NSLocalizedString("搜索", comment: "Search"),
             attributes: [
