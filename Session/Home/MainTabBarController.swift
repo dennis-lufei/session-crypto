@@ -141,21 +141,11 @@ public final class MainTabBarController: UITabBarController {
             selectedImage: UIImage(systemName: "person.circle.fill")
         )
         
-        // Tab 5: 搜索 (Search) - Similar to App Store
-        let searchVC = GlobalSearchViewController(using: dependencies)
-        let searchNav = StyledNavigationController(rootViewController: searchVC)
-        searchNav.tabBarItem = UITabBarItem(
-            title: NSLocalizedString("搜索", comment: "Search tab"),
-            image: UIImage(systemName: "magnifyingglass"),
-            selectedImage: UIImage(systemName: "magnifyingglass")
-        )
-        
         viewControllers = [
             chatNav,
             contactsNav,
             discoverNav,
-            settingsNav,
-            searchNav
+            settingsNav
         ]
         
         setupMessageRequestObservation()
