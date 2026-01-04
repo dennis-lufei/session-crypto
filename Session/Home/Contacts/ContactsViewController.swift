@@ -16,10 +16,9 @@ public final class ContactsViewController: BaseVC {
     
     // MARK: - UI
     
-    private lazy var searchBar: ContactsSearchBar = {
-        let result = ContactsSearchBar()
+    private lazy var searchBar: SearchBar = {
+        let result = SearchBar()
         result.themeTintColor = .textPrimary
-        result.themeBackgroundColor = .clear
         result.delegate = self
         result.searchTextField.accessibilityIdentifier = "Search contacts field"
         result.searchTextField.themeAttributedPlaceholder = ThemedAttributedString(
@@ -28,7 +27,6 @@ public final class ContactsViewController: BaseVC {
                 .themeForegroundColor: ThemeValue.textSecondary
             ]
         )
-        result.set(.height, to: (36 + (Values.mediumSpacing * 2)))
         return result
     }()
     
@@ -373,9 +371,24 @@ private final class ContactsViewModel: ObservableObject {
             allContacts = viewModels
         }
         
-        // Filter contacts by search text if needed
+        // Filter contacts by search text if needed (support pinyin search for Chinese)
         let filteredContacts = searchText.isEmpty ? viewModels : viewModels.filter { contact in
-            contact.displayName.lowercased().contains(searchText.lowercased())
+            let displayName = contact.displayName.lowercased()
+            let searchTerm = searchText.lowercased()
+            
+            // First check if the search term matches the display name directly
+            if displayName.contains(searchTerm) {
+                return true
+            }
+            
+            // Convert Chinese characters to pinyin for searching
+            let pinyinName = NSMutableString(string: contact.displayName)
+            CFStringTransform(pinyinName, nil, kCFStringTransformToLatin, false)
+            CFStringTransform(pinyinName, nil, kCFStringTransformStripDiacritics, false)
+            let pinyinString = String(pinyinName).lowercased()
+            
+            // Check if the search term matches the pinyin
+            return pinyinString.contains(searchTerm)
         }
         
         let nonalphabeticNameTitle: String = "#" // stringlint:ignore
