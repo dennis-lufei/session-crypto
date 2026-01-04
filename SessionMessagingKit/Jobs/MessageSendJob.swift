@@ -74,9 +74,12 @@ public enum MessageSendJob: JobExecutor {
         /// **Note:** Reactions reference their original message so we need to ignore this logic for reaction messages to ensure we don't
         /// incorrectly re-upload incoming attachments that the user reacted to, we also want to exclude "sync" messages since they should
         /// already have attachments in a valid state
+        /// **Note:** Moment messages (朋友圈消息) don't have interactions, so we skip the attachment check for them
         if
             details.message is VisibleMessage,
-            (details.message as? VisibleMessage)?.reaction == nil
+            let visibleMessage = details.message as? VisibleMessage,
+            visibleMessage.reaction == nil,
+            !(visibleMessage.text?.hasPrefix("__MOMENT__:") ?? false)  // Skip attachment check for moment messages
         {
             guard
                 let jobId: Int64 = job.id,

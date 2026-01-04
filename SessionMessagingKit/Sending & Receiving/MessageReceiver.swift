@@ -276,6 +276,36 @@ public enum MessageReceiver {
             using: dependencies
         )
         
+        // Handle moment messages (朋友圈消息) before processing as VisibleMessage
+        if let visibleMessage = message as? VisibleMessage,
+           let text = visibleMessage.text,
+           text.hasPrefix("__MOMENT__:"),
+           let sender = message.sender {
+            // Update profile if needed (want to do this regardless of whether the message exists or
+            // not to ensure the profile info gets sync between a users devices at every chance)
+            if let profile = visibleMessage.profile {
+                try Profile.updateIfNeeded(
+                    db,
+                    publicKey: sender,
+                    displayNameUpdate: .contactUpdate(profile.displayName),
+                    displayPictureUpdate: .from(profile, fallback: .contactRemove, using: dependencies),
+                    blocksCommunityMessageRequests: .set(to: profile.blocksCommunityMessageRequests),
+                    profileUpdateTimestamp: profile.updateTimestampSeconds,
+                    using: dependencies
+                )
+            }
+            
+            try handleMomentMessage(
+                db,
+                sender: sender,
+                text: text,
+                messageSentTimestampMs: message.sentTimestampMs ?? 0,
+                using: dependencies
+            )
+            // Return nil to skip creating Interaction for moment messages
+            return nil
+        }
+        
         let interactionInfo: InsertedInteractionInfo?
         switch message {
             case let message as ReadReceipt:
@@ -614,5 +644,45 @@ public enum MessageReceiver {
         if isMessageRequest && info.numPreviousInteractionsForMessageRequest == 0 {
             dependencies.set(db, .hasHiddenMessageRequests, false)
         }
+    }
+    
+    // MARK: - Moment Messages
+    
+    private static func handleMomentMessage(
+        _ db: ObservingDatabase,
+        sender: String,
+        text: String,
+        messageSentTimestampMs: UInt64,
+        using dependencies: Dependencies
+    ) throws {
+        // Extract JSON data from text (remove "__MOMENT__:" prefix)
+        let jsonString = String(text.dropFirst("__MOMENT__:".count))
+        guard let jsonData = jsonString.data(using: .utf8),
+              let momentData = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else {
+            return
+        }
+        
+        // Parse moment data
+        let content = momentData["content"] as? String
+        let imageAttachmentIdsString = momentData["imageAttachmentIds"] as? String
+        let timestampMs = (momentData["timestampMs"] as? Int64) ?? Int64(messageSentTimestampMs)
+        
+        // Check if moment already exists (avoid duplicates)
+        let existingMoment = try? Moment
+            .filter(Moment.Columns.authorId == sender)
+            .filter(Moment.Columns.timestampMs == timestampMs)
+            .fetchOne(db)
+        
+        guard existingMoment == nil else { return }
+        
+        // Create and save moment
+        var moment = Moment(
+            authorId: sender,
+            content: content,
+            imageAttachmentIds: imageAttachmentIdsString,
+            timestampMs: timestampMs
+        )
+        
+        try moment.insert(db)
     }
 }
