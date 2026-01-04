@@ -261,6 +261,8 @@ private final class ContactsViewModel: ObservableObject {
     private var messageRequestCancellable: DatabaseCancellable?
     private var messageRequestCount: Int = 0
     private var hasHiddenMessageRequests: Bool = false
+    private var searchText: String = ""
+    private var allContacts: [SessionThreadViewModel] = []
     
     init(using dependencies: Dependencies) {
         self.dependencies = dependencies
