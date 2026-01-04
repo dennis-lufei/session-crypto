@@ -84,7 +84,7 @@ class QRCodeScanningViewController: UIViewController, AVCaptureMetadataOutputObj
             // Center the circle's bounding rectangle
             let circleRect: CGRect = CGRect(
                 x: ((self.view.bounds.size.width * 0.5) - radius),
-                y: ((self.view.bounds.size.height * 0.5) - radius),
+                y: 24.0,
                 width: (radius * 2),
                 height: (radius * 2)
             )

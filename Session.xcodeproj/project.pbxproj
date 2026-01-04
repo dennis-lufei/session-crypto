@@ -74,6 +74,7 @@
 		4CA485BB2232339F004B9E7D /* PhotoCaptureViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CA485BA2232339F004B9E7D /* PhotoCaptureViewController.swift */; };
 		4CC613362227A00400E21A3A /* ConversationSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CC613352227A00400E21A3A /* ConversationSearch.swift */; };
 		52D688912F0ABFC200D91A8E /* AddFriendScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52D688902F0ABFC200D91A8E /* AddFriendScreen.swift */; };
+		52D688932F0AC1B200D91A8E /* ScanQRCodePage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52D688922F0AC1B200D91A8E /* ScanQRCodePage.swift */; };
 		52FC0C982F07CA3D000803B2 /* MainTabBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52FC0C972F07CA3D000803B2 /* MainTabBarController.swift */; };
 		52FC0C9B2F07CA5B000803B2 /* ContactsViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52FC0C992F07CA5B000803B2 /* ContactsViewController.swift */; };
 		52FC0C9E2F07CA68000803B2 /* DiscoverViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52FC0C9C2F07CA68000803B2 /* DiscoverViewController.swift */; };
@@ -1542,6 +1543,7 @@
 		4CA485BA2232339F004B9E7D /* PhotoCaptureViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoCaptureViewController.swift; sourceTree = "<group>"; };
 		4CC613352227A00400E21A3A /* ConversationSearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationSearch.swift; sourceTree = "<group>"; };
 		52D688902F0ABFC200D91A8E /* AddFriendScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddFriendScreen.swift; sourceTree = "<group>"; };
+		52D688922F0AC1B200D91A8E /* ScanQRCodePage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanQRCodePage.swift; sourceTree = "<group>"; };
 		52FC0C972F07CA3D000803B2 /* MainTabBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabBarController.swift; sourceTree = "<group>"; };
 		52FC0C992F07CA5B000803B2 /* ContactsViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactsViewController.swift; sourceTree = "<group>"; };
 		52FC0C9C2F07CA68000803B2 /* DiscoverViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscoverViewController.swift; sourceTree = "<group>"; };
@@ -2971,6 +2973,7 @@
 			isa = PBXGroup;
 			children = (
 				52D688902F0ABFC200D91A8E /* AddFriendScreen.swift */,
+				52D688922F0AC1B200D91A8E /* ScanQRCodePage.swift */,
 				9422567F2C23F8BB00C0FDBF /* InviteAFriendScreen.swift */,
 				9422567E2C23F8BB00C0FDBF /* NewMessageScreen.swift */,
 				9422567D2C23F8BB00C0FDBF /* StartConversationScreen.swift */,
@@ -7513,6 +7516,7 @@
 				7B5802992AAEF1B50050EEB1 /* OpenGroupInvitationView_SwiftUI.swift in Sources */,
 				FD716E6C28505E1C00C96BF4 /* MessageRequestsViewModel.swift in Sources */,
 				C35E8AAE2485E51D00ACB629 /* IP2Country.swift in Sources */,
+				52D688932F0AC1B200D91A8E /* ScanQRCodePage.swift in Sources */,
 				B835249B25C3AB650089A44F /* VisibleMessageCell.swift in Sources */,
 				B894D0752339EDCF00B4D94D /* NukeDataModal.swift in Sources */,
 				7B5233C42900E90F00F8F375 /* SessionLabelCarouselView.swift in Sources */,
