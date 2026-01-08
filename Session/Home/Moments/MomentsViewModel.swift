@@ -77,6 +77,7 @@ public class MomentsViewModel: ObservableObject {
     // MARK: - Observation
     
     private func observeMoments() {
+        let storage = dependencies[singleton: .storage]
         let observation = ValueObservation.trackingConstantRegion { [userSessionId, dependencies] db -> [MomentWithProfile] in
             let currentUserId = userSessionId.hexString
             let contact: TypedTableAlias<Contact> = TypedTableAlias()
@@ -106,47 +107,69 @@ public class MomentsViewModel: ObservableObject {
                 .order(Moment.Columns.timestampMs.desc)
                 .fetchAll(db)
             
+            guard !moments.isEmpty else { return [] }
+            
+            let momentIds = moments.compactMap { $0.id }
+            
+            // Batch fetch all profiles for moment authors
+            let authorIds = Set(moments.map { $0.authorId })
+            let profiles: [Profile] = try Profile
+                .filter(authorIds.contains(Profile.Columns.id))
+                .fetchAll(db)
+            let profilesById = Dictionary(uniqueKeysWithValues: profiles.map { ($0.id, $0) })
+            
+            // Batch fetch all likes for these moments
+            let allLikes: [MomentLike] = try MomentLike
+                .filter(momentIds.contains(MomentLike.Columns.momentId))
+                .order(MomentLike.Columns.timestampMs.asc)
+                .fetchAll(db)
+            
+            // Batch fetch all profiles for like authors
+            let likeAuthorIds = Set(allLikes.map { $0.authorId })
+            let likeProfiles: [Profile] = try Profile
+                .filter(likeAuthorIds.contains(Profile.Columns.id))
+                .fetchAll(db)
+            let likeProfilesById = Dictionary(uniqueKeysWithValues: likeProfiles.map { ($0.id, $0) })
+            
+            // Group likes by momentId
+            let likesByMomentId = Dictionary(grouping: allLikes) { $0.momentId }
+            
+            // Batch fetch all comments for these moments
+            let allComments: [MomentComment] = try MomentComment
+                .filter(momentIds.contains(MomentComment.Columns.momentId))
+                .order(MomentComment.Columns.timestampMs.asc)
+                .fetchAll(db)
+            
+            // Batch fetch all profiles for comment authors
+            let commentAuthorIds = Set(allComments.map { $0.authorId })
+            let commentProfiles: [Profile] = try Profile
+                .filter(commentAuthorIds.contains(Profile.Columns.id))
+                .fetchAll(db)
+            let commentProfilesById = Dictionary(uniqueKeysWithValues: commentProfiles.map { ($0.id, $0) })
+            
+            // Group comments by momentId
+            let commentsByMomentId = Dictionary(grouping: allComments) { $0.momentId }
+            
+            // Build result
             var result: [MomentWithProfile] = []
             
             for moment in moments {
-                // Fetch profile
-                guard let profile: Profile = try? Profile
-                    .filter(Profile.Columns.id == moment.authorId)
-                    .fetchOne(db)
-                else { continue }
+                guard let profile = profilesById[moment.authorId] else { continue }
                 
                 // Check if current user liked this moment
-                let likeCount = (try? MomentLike
-                    .filter(MomentLike.Columns.momentId == (moment.id ?? -1))
-                    .filter(MomentLike.Columns.authorId == currentUserId)
-                    .fetchCount(db)) ?? 0
-                let isLikedByCurrentUser = likeCount > 0
+                let momentLikes = likesByMomentId[moment.id ?? -1] ?? []
+                let isLikedByCurrentUser = momentLikes.contains { $0.authorId == currentUserId }
                 
-                // Fetch likes with profiles
-                let likes: [MomentLike] = try MomentLike
-                    .filter(MomentLike.Columns.momentId == (moment.id ?? -1))
-                    .order(MomentLike.Columns.timestampMs.asc)
-                    .fetchAll(db)
-                
-                let likesWithProfiles: [MomentLikeWithProfile] = try likes.compactMap { like in
-                    guard let likeProfile: Profile = try? Profile
-                        .filter(Profile.Columns.id == like.authorId)
-                        .fetchOne(db)
-                    else { return nil }
+                // Build likes with profiles
+                let likesWithProfiles: [MomentLikeWithProfile] = momentLikes.compactMap { like in
+                    guard let likeProfile = likeProfilesById[like.authorId] else { return nil }
                     return MomentLikeWithProfile(like: like, profile: likeProfile)
                 }
                 
-                // Fetch comments with profiles
-                let comments: [MomentComment] = try MomentComment
-                    .filter(MomentComment.Columns.momentId == (moment.id ?? -1))
-                    .order(MomentComment.Columns.timestampMs.asc)
-                    .fetchAll(db)
-                
-                let commentsWithProfiles: [MomentCommentWithProfile] = try comments.compactMap { comment in
-                    guard let commentProfile: Profile = try? Profile
-                        .filter(Profile.Columns.id == comment.authorId)
-                        .fetchOne(db)
-                    else { return nil }
+                // Build comments with profiles
+                let momentComments = commentsByMomentId[moment.id ?? -1] ?? []
+                let commentsWithProfiles: [MomentCommentWithProfile] = momentComments.compactMap { comment in
+                    guard let commentProfile = commentProfilesById[comment.authorId] else { return nil }
                     return MomentCommentWithProfile(comment: comment, profile: commentProfile)
                 }
                 
@@ -169,7 +192,7 @@ public class MomentsViewModel: ObservableObject {
             return result
         }
         
-        observationCancellable = dependencies[singleton: .storage].start(
+        observationCancellable = storage.start(
             observation,
             scheduling: .async(onQueue: .main),
             onError: { error in
@@ -189,30 +212,49 @@ public class MomentsViewModel: ObservableObject {
         let timestampMs = Int64(Date().timeIntervalSince1970 * 1000)
         let attachmentIdsString = imageAttachmentIds.isEmpty ? nil : imageAttachmentIds.joined(separator: ",")
         
-        // Save to local database first
-        try dependencies[singleton: .storage].write { db in
-            var moment = Moment(
-                authorId: currentUserId,
-                content: content,
-                imageAttachmentIds: attachmentIdsString,
-                timestampMs: timestampMs
-            )
-            
-            try moment.insert(db)
+        // Validate that we have either content or images
+        guard content?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false || !imageAttachmentIds.isEmpty else {
+            throw MomentsError.emptyContent
         }
         
-        // Send to all approved contacts
-        try self.dependencies[singleton: .storage].write { db in
+        // Save to local database first
+        let storage = dependencies[singleton: .storage]
+        do {
+            try storage.write { db in
+                var moment = Moment(
+                    authorId: currentUserId,
+                    content: content,
+                    imageAttachmentIds: attachmentIdsString,
+                    timestampMs: timestampMs
+                )
+                
+                try moment.insert(db)
+            }
+        } catch {
+            Log.error("[MomentsViewModel] Failed to save moment: \(error)")
+            throw MomentsError.databaseError(error)
+        }
+        
+        // Send to all approved contacts (non-blocking, errors are logged but don't fail the operation)
+        storage.writeAsync { db in
             let contact: TypedTableAlias<Contact> = TypedTableAlias()
             
             // Get all approved contacts (excluding current user)
-            let contactIds = try Contact
-                .filter(contact[.isApproved] == true)
-                .filter(contact[.isBlocked] == false)
-                .filter(contact[.id] != currentUserId)
-                .select(.id)
-                .asRequest(of: String.self)
-                .fetchAll(db)
+            let contactIds: [String]
+            do {
+                contactIds = try Contact
+                    .filter(contact[.isApproved] == true)
+                    .filter(contact[.isBlocked] == false)
+                    .filter(contact[.id] != currentUserId)
+                    .select(.id)
+                    .asRequest(of: String.self)
+                    .fetchAll(db)
+            } catch {
+                Log.error("[MomentsViewModel] Failed to fetch contacts: \(error)")
+                return
+            }
+            
+            guard !contactIds.isEmpty else { return }
             
             // Create JSON data for moment
             let momentData: [String: Any] = [
@@ -223,12 +265,16 @@ public class MomentsViewModel: ObservableObject {
             
             guard let jsonData = try? JSONSerialization.data(withJSONObject: momentData),
                   let jsonString = String(data: jsonData, encoding: .utf8) else {
+                Log.error("[MomentsViewModel] Failed to serialize moment data")
                 return
             }
             
             let momentText = "__MOMENT__:\(jsonString)"
             
             // Send to each contact
+            var successCount = 0
+            var failureCount = 0
+            
             for contactId in contactIds {
                 do {
                     try MessageSender.send(
@@ -239,16 +285,23 @@ public class MomentsViewModel: ObservableObject {
                         threadVariant: .contact,
                         using: self.dependencies
                     )
+                    successCount += 1
                 } catch {
+                    failureCount += 1
                     Log.error("[MomentsViewModel] Failed to send moment to \(contactId): \(error)")
                 }
+            }
+            
+            if failureCount > 0 {
+                Log.warn("[MomentsViewModel] Sent moment to \(successCount)/\(contactIds.count) contacts")
             }
         }
     }
     
     public func toggleLike(momentId: Int64) throws {
         let currentUserId = userSessionId.hexString
-        try dependencies[singleton: .storage].write { db in
+        let storage = dependencies[singleton: .storage]
+        try storage.write { db in
             let timestampMs = Int64(Date().timeIntervalSince1970 * 1000)
             
             // Check if already liked
@@ -288,7 +341,8 @@ public class MomentsViewModel: ObservableObject {
     
     public func addComment(momentId: Int64, content: String) throws {
         let currentUserId = userSessionId.hexString
-        try dependencies[singleton: .storage].write { db in
+        let storage = dependencies[singleton: .storage]
+        try storage.write { db in
             let timestampMs = Int64(Date().timeIntervalSince1970 * 1000)
             
             var comment = MomentComment(
@@ -310,8 +364,33 @@ public class MomentsViewModel: ObservableObject {
     }
     
     public func deleteMoment(momentId: Int64) throws {
-        try dependencies[singleton: .storage].write { db in
-            try Moment.filter(Moment.Columns.id == momentId).deleteAll(db)
+        let storage = dependencies[singleton: .storage]
+        do {
+            try storage.write { db in
+                try Moment.filter(Moment.Columns.id == momentId).deleteAll(db)
+            }
+        } catch {
+            Log.error("[MomentsViewModel] Failed to delete moment: \(error)")
+            throw MomentsError.databaseError(error)
+        }
+    }
+}
+
+// MARK: - Errors
+
+public enum MomentsError: LocalizedError {
+    case emptyContent
+    case databaseError(Error)
+    case networkError(Error)
+    
+    public var errorDescription: String? {
+        switch self {
+        case .emptyContent:
+            return NSLocalizedString("动态内容不能为空", comment: "Moment content cannot be empty")
+        case .databaseError(let error):
+            return NSLocalizedString("数据库错误: \(error.localizedDescription)", comment: "Database error")
+        case .networkError(let error):
+            return NSLocalizedString("网络错误: \(error.localizedDescription)", comment: "Network error")
         }
     }
 }
