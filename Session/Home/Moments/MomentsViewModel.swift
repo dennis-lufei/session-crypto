@@ -17,9 +17,6 @@ public class MomentsViewModel: ObservableObject {
     public struct MomentWithProfile: Identifiable, Hashable {
         public let moment: Moment
         public let profile: Profile
-        public let isLikedByCurrentUser: Bool
-        public let likes: [MomentLikeWithProfile]
-        public let comments: [MomentCommentWithProfile]
         public let imageAttachmentIds: [String]
         
         public var id: Int64 { moment.id ?? -1 }
@@ -27,41 +24,11 @@ public class MomentsViewModel: ObservableObject {
         public init(
             moment: Moment,
             profile: Profile,
-            isLikedByCurrentUser: Bool,
-            likes: [MomentLikeWithProfile],
-            comments: [MomentCommentWithProfile],
             imageAttachmentIds: [String]
         ) {
             self.moment = moment
             self.profile = profile
-            self.isLikedByCurrentUser = isLikedByCurrentUser
-            self.likes = likes
-            self.comments = comments
             self.imageAttachmentIds = imageAttachmentIds
-        }
-    }
-    
-    public struct MomentLikeWithProfile: Identifiable, Hashable {
-        public let like: MomentLike
-        public let profile: Profile
-        
-        public var id: String { like.id }
-        
-        public init(like: MomentLike, profile: Profile) {
-            self.like = like
-            self.profile = profile
-        }
-    }
-    
-    public struct MomentCommentWithProfile: Identifiable, Hashable {
-        public let comment: MomentComment
-        public let profile: Profile
-        
-        public var id: Int64 { comment.id ?? -1 }
-        
-        public init(comment: MomentComment, profile: Profile) {
-            self.comment = comment
-            self.profile = profile
         }
     }
     
@@ -109,8 +76,6 @@ public class MomentsViewModel: ObservableObject {
             
             guard !moments.isEmpty else { return [] }
             
-            let momentIds = moments.compactMap { $0.id }
-            
             // Batch fetch all profiles for moment authors
             let authorIds = Set(moments.map { $0.authorId })
             let profiles: [Profile] = try Profile
@@ -118,60 +83,11 @@ public class MomentsViewModel: ObservableObject {
                 .fetchAll(db)
             let profilesById = Dictionary(uniqueKeysWithValues: profiles.map { ($0.id, $0) })
             
-            // Batch fetch all likes for these moments
-            let allLikes: [MomentLike] = try MomentLike
-                .filter(momentIds.contains(MomentLike.Columns.momentId))
-                .order(MomentLike.Columns.timestampMs.asc)
-                .fetchAll(db)
-            
-            // Batch fetch all profiles for like authors
-            let likeAuthorIds = Set(allLikes.map { $0.authorId })
-            let likeProfiles: [Profile] = try Profile
-                .filter(likeAuthorIds.contains(Profile.Columns.id))
-                .fetchAll(db)
-            let likeProfilesById = Dictionary(uniqueKeysWithValues: likeProfiles.map { ($0.id, $0) })
-            
-            // Group likes by momentId
-            let likesByMomentId = Dictionary(grouping: allLikes) { $0.momentId }
-            
-            // Batch fetch all comments for these moments
-            let allComments: [MomentComment] = try MomentComment
-                .filter(momentIds.contains(MomentComment.Columns.momentId))
-                .order(MomentComment.Columns.timestampMs.asc)
-                .fetchAll(db)
-            
-            // Batch fetch all profiles for comment authors
-            let commentAuthorIds = Set(allComments.map { $0.authorId })
-            let commentProfiles: [Profile] = try Profile
-                .filter(commentAuthorIds.contains(Profile.Columns.id))
-                .fetchAll(db)
-            let commentProfilesById = Dictionary(uniqueKeysWithValues: commentProfiles.map { ($0.id, $0) })
-            
-            // Group comments by momentId
-            let commentsByMomentId = Dictionary(grouping: allComments) { $0.momentId }
-            
             // Build result
             var result: [MomentWithProfile] = []
             
             for moment in moments {
                 guard let profile = profilesById[moment.authorId] else { continue }
-                
-                // Check if current user liked this moment
-                let momentLikes = likesByMomentId[moment.id ?? -1] ?? []
-                let isLikedByCurrentUser = momentLikes.contains { $0.authorId == currentUserId }
-                
-                // Build likes with profiles (create default profile if not found)
-                let likesWithProfiles: [MomentLikeWithProfile] = momentLikes.map { like in
-                    let likeProfile = likeProfilesById[like.authorId] ?? Profile.defaultFor(like.authorId)
-                    return MomentLikeWithProfile(like: like, profile: likeProfile)
-                }
-                
-                // Build comments with profiles (create default profile if not found)
-                let momentComments = commentsByMomentId[moment.id ?? -1] ?? []
-                let commentsWithProfiles: [MomentCommentWithProfile] = momentComments.map { comment in
-                    let commentProfile = commentProfilesById[comment.authorId] ?? Profile.defaultFor(comment.authorId)
-                    return MomentCommentWithProfile(comment: comment, profile: commentProfile)
-                }
                 
                 // Parse image attachment IDs
                 let imageAttachmentIds: [String] = (moment.imageAttachmentIds ?? "")
@@ -182,9 +98,6 @@ public class MomentsViewModel: ObservableObject {
                 result.append(MomentWithProfile(
                     moment: moment,
                     profile: profile,
-                    isLikedByCurrentUser: isLikedByCurrentUser,
-                    likes: likesWithProfiles,
-                    comments: commentsWithProfiles,
                     imageAttachmentIds: imageAttachmentIds
                 ))
             }
@@ -484,161 +397,6 @@ public class MomentsViewModel: ObservableObject {
         }
     }
     
-    public func toggleLike(momentId: Int64) throws {
-        let currentUserId = userSessionId.hexString
-        let storage = dependencies[singleton: .storage]
-        
-        // Get moment author to send notification
-        var momentAuthorId: String?
-        var isLiking: Bool = false
-        
-        try storage.write { db in
-            // Get moment to find author
-            guard let moment: Moment = try? Moment.fetchOne(db, id: momentId) else {
-                throw MomentsError.databaseError(NSError(domain: "MomentsViewModel", code: -1, userInfo: [NSLocalizedDescriptionKey: "Moment not found"]))
-            }
-            momentAuthorId = moment.authorId
-            
-            let timestampMs = Int64(Date().timeIntervalSince1970 * 1000)
-            
-            // Check if already liked
-            let existingLike = try? MomentLike
-                .filter(MomentLike.Columns.momentId == momentId)
-                .filter(MomentLike.Columns.authorId == currentUserId)
-                .fetchOne(db)
-            
-            if let existingLike = existingLike {
-                // Unlike
-                try existingLike.delete(db)
-                isLiking = false
-                
-                // Update moment like count
-                try db.execute(sql: """
-                    UPDATE moment
-                    SET likeCount = likeCount - 1
-                    WHERE id = ?
-                """, arguments: [momentId])
-            } else {
-                // Like
-                let like = MomentLike(
-                    momentId: momentId,
-                    authorId: currentUserId,
-                    timestampMs: timestampMs
-                )
-                try like.insert(db)
-                isLiking = true
-                
-                // Update moment like count
-                try db.execute(sql: """
-                    UPDATE moment
-                    SET likeCount = likeCount + 1
-                    WHERE id = ?
-                """, arguments: [momentId])
-            }
-        }
-        
-        // Send like notification to moment author (if not current user)
-        if let authorId = momentAuthorId, authorId != currentUserId, isLiking {
-            storage.writeAsync { [weak self] db in
-                guard let self = self else { return }
-                
-                let likeData: [String: Any] = [
-                    "type": "like",
-                    "momentId": momentId,
-                    "timestampMs": Int64(Date().timeIntervalSince1970 * 1000)
-                ]
-                
-                guard let jsonData = try? JSONSerialization.data(withJSONObject: likeData),
-                      let jsonString = String(data: jsonData, encoding: .utf8) else {
-                    return
-                }
-                
-                let likeText = "__MOMENT_LIKE__:\(jsonString)"
-                
-                do {
-                    try MessageSender.send(
-                        db,
-                        message: VisibleMessage(text: likeText),
-                        interactionId: nil,
-                        threadId: authorId,
-                        threadVariant: .contact,
-                        using: self.dependencies
-                    )
-                } catch {
-                    Log.error("[MomentsViewModel] Failed to send like notification: \(error)")
-                }
-            }
-        }
-    }
-    
-    public func addComment(momentId: Int64, content: String) throws {
-        let currentUserId = userSessionId.hexString
-        let storage = dependencies[singleton: .storage]
-        
-        // Get moment author to send notification
-        var momentAuthorId: String?
-        
-        try storage.write { db in
-            // Get moment to find author
-            guard let moment: Moment = try? Moment.fetchOne(db, id: momentId) else {
-                throw MomentsError.databaseError(NSError(domain: "MomentsViewModel", code: -1, userInfo: [NSLocalizedDescriptionKey: "Moment not found"]))
-            }
-            momentAuthorId = moment.authorId
-            
-            let timestampMs = Int64(Date().timeIntervalSince1970 * 1000)
-            
-            var comment = MomentComment(
-                momentId: momentId,
-                authorId: currentUserId,
-                content: content,
-                timestampMs: timestampMs
-            )
-            
-            try comment.insert(db)
-            
-            // Update moment comment count
-            try db.execute(sql: """
-                UPDATE moment
-                SET commentCount = commentCount + 1
-                WHERE id = ?
-            """, arguments: [momentId])
-        }
-        
-        // Send comment notification to moment author (if not current user)
-        if let authorId = momentAuthorId, authorId != currentUserId {
-            storage.writeAsync { [weak self] db in
-                guard let self = self else { return }
-                
-                let commentData: [String: Any] = [
-                    "type": "comment",
-                    "momentId": momentId,
-                    "content": content,
-                    "timestampMs": Int64(Date().timeIntervalSince1970 * 1000)
-                ]
-                
-                guard let jsonData = try? JSONSerialization.data(withJSONObject: commentData),
-                      let jsonString = String(data: jsonData, encoding: .utf8) else {
-                    return
-                }
-                
-                let commentText = "__MOMENT_COMMENT__:\(jsonString)"
-                
-                do {
-                    try MessageSender.send(
-                        db,
-                        message: VisibleMessage(text: commentText),
-                        interactionId: nil,
-                        threadId: authorId,
-                        threadVariant: .contact,
-                        using: self.dependencies
-                    )
-                } catch {
-                    Log.error("[MomentsViewModel] Failed to send comment notification: \(error)")
-                }
-            }
-        }
-    }
-    
     public func deleteMoment(momentId: Int64) throws {
         let storage = dependencies[singleton: .storage]
         do {
@@ -670,4 +428,3 @@ public enum MomentsError: LocalizedError {
         }
     }
 }
-

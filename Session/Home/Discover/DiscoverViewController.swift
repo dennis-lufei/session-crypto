@@ -201,42 +201,6 @@ private class MomentCell: UITableViewCell {
         return result
     }()
     
-    private lazy var likeButton: UIButton = {
-        let result = UIButton(type: .system)
-        result.setTitle(NSLocalizedString("👍 赞", comment: "Like"), for: .normal)
-        result.titleLabel?.font = .systemFont(ofSize: Values.smallFontSize)
-        result.themeTintColor = .primary
-        result.addTarget(self, action: #selector(likeButtonTapped), for: .touchUpInside)
-        return result
-    }()
-    
-    private lazy var commentButton: UIButton = {
-        let result = UIButton(type: .system)
-        result.setTitle(NSLocalizedString("💬 评论", comment: "Comment"), for: .normal)
-        result.titleLabel?.font = .systemFont(ofSize: Values.smallFontSize)
-        result.themeTintColor = .primary
-        result.addTarget(self, action: #selector(commentButtonTapped), for: .touchUpInside)
-        return result
-    }()
-    
-    private lazy var likesLabel: UILabel = {
-        let result = UILabel()
-        result.font = .systemFont(ofSize: Values.mediumFontSize)
-        result.themeTextColor = .textPrimary
-        result.numberOfLines = 0
-        result.lineBreakMode = .byCharWrapping
-        return result
-    }()
-    
-    private lazy var commentsLabel: UILabel = {
-        let result = UILabel()
-        result.font = .systemFont(ofSize: Values.mediumFontSize)
-        result.themeTextColor = .textPrimary
-        result.numberOfLines = 0
-        result.lineBreakMode = .byCharWrapping
-        return result
-    }()
-    
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
         setupUI()
@@ -255,23 +219,11 @@ private class MomentCell: UITableViewCell {
         headerStack.spacing = Values.mediumSpacing
         headerStack.alignment = .center
         
-        let actionStack = UIStackView(arrangedSubviews: [likeButton, commentButton])
-        actionStack.axis = .horizontal
-        actionStack.spacing = Values.largeSpacing
-        
-        // 点赞和评论容器
-        let interactionContainer = UIStackView(arrangedSubviews: [likesLabel, commentsLabel])
-        interactionContainer.axis = .vertical
-        interactionContainer.spacing = Values.smallSpacing
-        interactionContainer.alignment = .leading
-        
         let contentStack = UIStackView(arrangedSubviews: [
             headerStack,
             contentLabel,
             imageStackView,
-            timeLabel,
-            interactionContainer,
-            actionStack
+            timeLabel
         ])
         contentStack.axis = .vertical
         contentStack.spacing = Values.mediumSpacing
@@ -317,37 +269,6 @@ private class MomentCell: UITableViewCell {
         let date = Date(timeIntervalSince1970: Double(momentWithProfile.moment.timestampMs) / 1000)
         timeLabel.text = formatRelativeTime(from: date)
         
-        // Likes - 改进显示样式，使用中文分隔符
-        if !momentWithProfile.likes.isEmpty {
-            let names = momentWithProfile.likes.map { $0.profile.displayName(for: .contact) }
-            let text = names.joined(separator: "、")
-            likesLabel.text = "❤️ \(text)"
-            likesLabel.isHidden = false
-        } else {
-            likesLabel.isHidden = true
-        }
-        
-        // Like button state
-        if momentWithProfile.isLikedByCurrentUser {
-            likeButton.setTitle(NSLocalizedString("👍 已赞", comment: "Liked"), for: .normal)
-        } else {
-            likeButton.setTitle(NSLocalizedString("👍 赞", comment: "Like"), for: .normal)
-        }
-        
-        // Comments - 改进显示样式，支持回复
-        if !momentWithProfile.comments.isEmpty {
-            let commentTexts = momentWithProfile.comments.map { commentWithProfile in
-                let name = commentWithProfile.profile.displayName(for: .contact)
-                let content = commentWithProfile.comment.content
-                // 检查是否是回复评论（可以通过内容格式判断，或者添加replyTo字段）
-                return "\(name): \(content)"
-            }
-            commentsLabel.text = commentTexts.joined(separator: "\n")
-            commentsLabel.isHidden = false
-        } else {
-            commentsLabel.isHidden = true
-        }
-        
         // Load images
         loadImages(attachmentIds: momentWithProfile.imageAttachmentIds)
     }
@@ -364,12 +285,6 @@ private class MomentCell: UITableViewCell {
         
         // Clear image stack view
         imageStackView.arrangedSubviews.forEach { $0.removeFromSuperview() }
-        
-        // Reset labels
-        likesLabel.text = nil
-        likesLabel.isHidden = true
-        commentsLabel.text = nil
-        commentsLabel.isHidden = true
         
         // Reset state
         momentWithProfile = nil
@@ -633,68 +548,6 @@ private class MomentCell: UITableViewCell {
         )
         
         attachmentObservations[attachmentId] = cancellable
-    }
-    
-    @objc private func likeButtonTapped() {
-        guard let momentWithProfile = momentWithProfile,
-              let momentId = momentWithProfile.moment.id,
-              let viewModel = viewModel else { return }
-        
-        do {
-            try viewModel.toggleLike(momentId: momentId)
-        } catch {
-            Log.error("[MomentCell] Failed to toggle like: \(error)")
-            showErrorAlert(message: NSLocalizedString("操作失败，请重试", comment: "Operation failed, please try again"))
-        }
-    }
-    
-    @objc private func commentButtonTapped() {
-        guard let momentWithProfile = momentWithProfile,
-              let momentId = momentWithProfile.moment.id else { return }
-        
-        let alert = UIAlertController(
-            title: NSLocalizedString("评论", comment: "Comment"),
-            message: nil,
-            preferredStyle: .alert
-        )
-        
-        alert.addTextField { textField in
-            textField.placeholder = NSLocalizedString("输入评论...", comment: "Enter comment...")
-        }
-        
-        alert.addAction(UIAlertAction(title: NSLocalizedString("取消", comment: "Cancel"), style: .cancel))
-        alert.addAction(UIAlertAction(title: NSLocalizedString("发送", comment: "Send"), style: .default) { [weak self] _ in
-            guard let self = self,
-                  let textField = alert.textFields?.first,
-                  let content = textField.text,
-                  !content.trimmingCharacters(in: .whitespaces).isEmpty,
-                  let viewModel = self.viewModel else { return }
-            
-            do {
-                try viewModel.addComment(momentId: momentId, content: content)
-            } catch {
-                Log.error("[MomentCell] Failed to add comment: \(error)")
-                self.showErrorAlert(message: NSLocalizedString("评论失败，请重试", comment: "Failed to add comment, please try again"))
-            }
-        })
-        
-        if let viewController = self.findViewController() {
-            viewController.present(alert, animated: true)
-        }
-    }
-}
-
-private extension MomentCell {
-    func showErrorAlert(message: String) {
-        guard let viewController = self.findViewController() else { return }
-        
-        let alert = UIAlertController(
-            title: NSLocalizedString("错误", comment: "Error"),
-            message: message,
-            preferredStyle: .alert
-        )
-        alert.addAction(UIAlertAction(title: NSLocalizedString("确定", comment: "OK"), style: .default))
-        viewController.present(alert, animated: true)
     }
 }
 

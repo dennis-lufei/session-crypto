@@ -78,8 +78,6 @@
 		52D688962F0AEC3600D91A8E /* MomentsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52D688942F0AEC3600D91A8E /* MomentsViewModel.swift */; };
 		52D688982F0AEC7F00D91A8E /* _047_Moments.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52D688972F0AEC7F00D91A8E /* _047_Moments.swift */; };
 		52D6889C2F0AECA500D91A8E /* Moment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52D688992F0AECA500D91A8E /* Moment.swift */; };
-		52D6889D2F0AECA500D91A8E /* MomentComment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52D6889A2F0AECA500D91A8E /* MomentComment.swift */; };
-		52D6889E2F0AECA500D91A8E /* MomentLike.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52D6889B2F0AECA500D91A8E /* MomentLike.swift */; };
 		52D688A02F0AF0F600D91A8E /* PostMomentViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52D6889F2F0AF0F600D91A8E /* PostMomentViewController.swift */; };
 		52FC0C982F07CA3D000803B2 /* MainTabBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52FC0C972F07CA3D000803B2 /* MainTabBarController.swift */; };
 		52FC0C9B2F07CA5B000803B2 /* ContactsViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52FC0C992F07CA5B000803B2 /* ContactsViewController.swift */; };
@@ -1553,8 +1551,6 @@
 		52D688942F0AEC3600D91A8E /* MomentsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentsViewModel.swift; sourceTree = "<group>"; };
 		52D688972F0AEC7F00D91A8E /* _047_Moments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = _047_Moments.swift; sourceTree = "<group>"; };
 		52D688992F0AECA500D91A8E /* Moment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moment.swift; sourceTree = "<group>"; };
-		52D6889A2F0AECA500D91A8E /* MomentComment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentComment.swift; sourceTree = "<group>"; };
-		52D6889B2F0AECA500D91A8E /* MomentLike.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentLike.swift; sourceTree = "<group>"; };
 		52D6889F2F0AF0F600D91A8E /* PostMomentViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PostMomentViewController.swift; sourceTree = "<group>"; };
 		52FC0C972F07CA3D000803B2 /* MainTabBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabBarController.swift; sourceTree = "<group>"; };
 		52FC0C992F07CA5B000803B2 /* ContactsViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactsViewController.swift; sourceTree = "<group>"; };
@@ -4330,8 +4326,6 @@
 				FD8ECF7E2934298100C0D1BB /* ConfigDump.swift */,
 				FD432433299C6985008A0213 /* PendingReadReceipt.swift */,
 				52D688992F0AECA500D91A8E /* Moment.swift */,
-				52D6889A2F0AECA500D91A8E /* MomentComment.swift */,
-				52D6889B2F0AECA500D91A8E /* MomentLike.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -7147,8 +7141,6 @@
 				FD2272832C337830004D8A6C /* GroupPoller.swift in Sources */,
 				FD22726C2C32911C004D8A6C /* GroupLeavingJob.swift in Sources */,
 				52D6889C2F0AECA500D91A8E /* Moment.swift in Sources */,
-				52D6889D2F0AECA500D91A8E /* MomentComment.swift in Sources */,
-				52D6889E2F0AECA500D91A8E /* MomentLike.swift in Sources */,
 				FDE33BBE2D5C3AF100E56F42 /* _037_GroupsExpiredFlag.swift in Sources */,
 				FDF848F729414477007DCAE5 /* CurrentUserPoller.swift in Sources */,
 				C3C2A74D2553A39700C340D1 /* VisibleMessage.swift in Sources */,

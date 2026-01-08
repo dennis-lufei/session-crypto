@@ -16,8 +16,6 @@ public struct Moment: Codable, Sendable, Identifiable, Equatable, Hashable, Fetc
         case content
         case imageAttachmentIds
         case timestampMs
-        case likeCount
-        case commentCount
     }
     
     /// Unique identifier for the moment
@@ -35,12 +33,6 @@ public struct Moment: Codable, Sendable, Identifiable, Equatable, Hashable, Fetc
     /// When the moment was created in milliseconds since epoch
     public let timestampMs: Int64
     
-    /// Number of likes
-    public let likeCount: Int64
-    
-    /// Number of comments
-    public let commentCount: Int64
-    
     // MARK: - Relationships
     
     public var profile: QueryInterfaceRequest<Profile> {
@@ -54,17 +46,13 @@ public struct Moment: Codable, Sendable, Identifiable, Equatable, Hashable, Fetc
         authorId: String,
         content: String?,
         imageAttachmentIds: String?,
-        timestampMs: Int64,
-        likeCount: Int64 = 0,
-        commentCount: Int64 = 0
+        timestampMs: Int64
     ) {
         self.id = id
         self.authorId = authorId
         self.content = content
         self.imageAttachmentIds = imageAttachmentIds
         self.timestampMs = timestampMs
-        self.likeCount = likeCount
-        self.commentCount = commentCount
     }
 }
 
