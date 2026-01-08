@@ -279,7 +279,6 @@ public enum MessageReceiver {
         // Handle moment messages (朋友圈消息) before processing as VisibleMessage
         if let visibleMessage = message as? VisibleMessage,
            let text = visibleMessage.text,
-           text.hasPrefix("__MOMENT__:"),
            let sender = message.sender {
             // Update profile if needed (want to do this regardless of whether the message exists or
             // not to ensure the profile info gets sync between a users devices at every chance)
@@ -295,15 +294,68 @@ public enum MessageReceiver {
                 )
             }
             
-            try handleMomentMessage(
-                db,
-                sender: sender,
-                text: text,
-                messageSentTimestampMs: message.sentTimestampMs ?? 0,
-                using: dependencies
-            )
-            // Return nil to skip creating Interaction for moment messages
-            return nil
+            // Handle moment post
+            if text.hasPrefix("__MOMENT__:") {
+                try handleMomentMessage(
+                    db,
+                    sender: sender,
+                    text: text,
+                    messageSentTimestampMs: message.sentTimestampMs ?? 0,
+                    using: dependencies
+                )
+                // Return nil to skip creating Interaction for moment messages
+                return nil
+            }
+            
+            // Handle moment like
+            if text.hasPrefix("__MOMENT_LIKE__:") {
+                // Update profile if available (may not be included in like messages)
+                if let profile = visibleMessage.profile {
+                    try Profile.updateIfNeeded(
+                        db,
+                        publicKey: sender,
+                        displayNameUpdate: .contactUpdate(profile.displayName),
+                        displayPictureUpdate: .from(profile, fallback: .contactRemove, using: dependencies),
+                        blocksCommunityMessageRequests: .set(to: profile.blocksCommunityMessageRequests),
+                        profileUpdateTimestamp: profile.updateTimestampSeconds,
+                        using: dependencies
+                    )
+                }
+                
+                try handleMomentLikeMessage(
+                    db,
+                    sender: sender,
+                    text: text,
+                    using: dependencies
+                )
+                // Return nil to skip creating Interaction for moment like messages
+                return nil
+            }
+            
+            // Handle moment comment
+            if text.hasPrefix("__MOMENT_COMMENT__:") {
+                // Update profile if available (may not be included in comment messages)
+                if let profile = visibleMessage.profile {
+                    try Profile.updateIfNeeded(
+                        db,
+                        publicKey: sender,
+                        displayNameUpdate: .contactUpdate(profile.displayName),
+                        displayPictureUpdate: .from(profile, fallback: .contactRemove, using: dependencies),
+                        blocksCommunityMessageRequests: .set(to: profile.blocksCommunityMessageRequests),
+                        profileUpdateTimestamp: profile.updateTimestampSeconds,
+                        using: dependencies
+                    )
+                }
+                
+                try handleMomentCommentMessage(
+                    db,
+                    sender: sender,
+                    text: text,
+                    using: dependencies
+                )
+                // Return nil to skip creating Interaction for moment comment messages
+                return nil
+            }
         }
         
         let interactionInfo: InsertedInteractionInfo?
@@ -665,7 +717,29 @@ public enum MessageReceiver {
         // Parse moment data
         let content = momentData["content"] as? String
         let imageAttachmentIdsString = momentData["imageAttachmentIds"] as? String
+        let imageDownloadUrlsString = momentData["imageDownloadUrls"] as? String
+        let imageEncryptionKeysString = momentData["imageEncryptionKeys"] as? String
+        let imageDigestsString = momentData["imageDigests"] as? String
+        let imageByteCountsString = momentData["imageByteCounts"] as? String
         let timestampMs = (momentData["timestampMs"] as? Int64) ?? Int64(messageSentTimestampMs)
+        
+        print("🟢 [MessageReceiver] ========== RECEIVED MOMENT ==========")
+        print("🟢 [MessageReceiver] Received moment from \(sender)")
+        print("🟢 [MessageReceiver] Content: \(content ?? "nil")")
+        print("🟢 [MessageReceiver] ImageAttachmentIds: \(imageAttachmentIdsString ?? "nil")")
+        print("🟢 [MessageReceiver] ImageDownloadUrls: \(imageDownloadUrlsString ?? "nil")")
+        print("🟢 [MessageReceiver] ImageEncryptionKeys: \(imageEncryptionKeysString ?? "nil")")
+        print("🟢 [MessageReceiver] ImageDigests: \(imageDigestsString ?? "nil")")
+        print("🟢 [MessageReceiver] ImageByteCounts: \(imageByteCountsString ?? "nil")")
+        print("🟢 [MessageReceiver] =====================================")
+        
+        Log.info("[MessageReceiver] Received moment from \(sender)")
+        Log.info("[MessageReceiver] Content: \(content ?? "nil")")
+        Log.info("[MessageReceiver] ImageAttachmentIds: \(imageAttachmentIdsString ?? "nil")")
+        Log.info("[MessageReceiver] ImageDownloadUrls: \(imageDownloadUrlsString ?? "nil")")
+        Log.info("[MessageReceiver] ImageEncryptionKeys: \(imageEncryptionKeysString ?? "nil")")
+        Log.info("[MessageReceiver] ImageDigests: \(imageDigestsString ?? "nil")")
+        Log.info("[MessageReceiver] ImageByteCounts: \(imageByteCountsString ?? "nil")")
         
         // Check if moment already exists (avoid duplicates)
         let existingMoment = try? Moment
@@ -675,14 +749,377 @@ public enum MessageReceiver {
         
         guard existingMoment == nil else { return }
         
+        // Parse download URLs
+        var attachmentIds: [String] = []
+        if let imageDownloadUrlsString = imageDownloadUrlsString {
+            let downloadUrls = imageDownloadUrlsString
+                .split(separator: ",")
+                .map { String($0).trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+            
+            print("🟢 [MessageReceiver] Processing \(downloadUrls.count) download URLs")
+            
+            // Parse encryption keys, digests, and byteCounts
+            let encryptionKeys: [String?] = imageEncryptionKeysString?
+                .split(separator: ",")
+                .map { String($0).trimmingCharacters(in: .whitespaces) }
+                .map { $0.isEmpty ? nil : $0 }
+                ?? []
+            let digests: [String?] = imageDigestsString?
+                .split(separator: ",")
+                .map { String($0).trimmingCharacters(in: .whitespaces) }
+                .map { $0.isEmpty ? nil : $0 }
+                ?? []
+            let byteCounts: [UInt] = imageByteCountsString?
+                .split(separator: ",")
+                .map { String($0).trimmingCharacters(in: .whitespaces) }
+                .compactMap { UInt($0) }
+                ?? []
+            
+            // Create Attachment records for each download URL and download them
+            for (index, downloadUrl) in downloadUrls.enumerated() {
+                let attachmentId = UUID().uuidString
+                
+                // Get encryption key, digest, and byteCount for this attachment
+                let encryptionKeyHex = (index < encryptionKeys.count) ? encryptionKeys[index] : nil
+                let digestHex = (index < digests.count) ? digests[index] : nil
+                let byteCount = (index < byteCounts.count) ? byteCounts[index] : 0
+                let encryptionKey = encryptionKeyHex.flatMap { Data(hex: $0) }
+                let digest = digestHex.flatMap { Data(hex: $0) }
+                
+                print("🟢 [MessageReceiver] Creating attachment[\(index)]: id=\(attachmentId), url=\(downloadUrl)")
+                print("🟢 [MessageReceiver] EncryptionKey[\(index)]: \(encryptionKeyHex ?? "nil"), hasKey=\(encryptionKey != nil)")
+                print("🟢 [MessageReceiver] Digest[\(index)]: \(digestHex ?? "nil"), hasDigest=\(digest != nil)")
+                print("🟢 [MessageReceiver] ByteCount[\(index)]: \(byteCount)")
+                
+                // Create attachment record with pending download state
+                var attachment = Attachment(
+                    id: attachmentId,
+                    serverId: Network.FileServer.fileId(for: downloadUrl),
+                    variant: .standard,
+                    state: .pendingDownload,
+                    contentType: "image/jpeg",
+                    byteCount: byteCount, // Use the byteCount from message (original plaintext size)
+                    creationTimestamp: Date().timeIntervalSince1970,
+                    sourceFilename: "moment_image.jpg",
+                    downloadUrl: downloadUrl,
+                    width: nil,
+                    height: nil,
+                    duration: nil,
+                    isVisualMedia: true,
+                    isValid: true,
+                    encryptionKey: encryptionKey,
+                    digest: digest
+                )
+                
+                try attachment.insert(db)
+                attachmentIds.append(attachmentId)
+                
+                // Download attachment directly (since moment messages don't have Interaction)
+                let deps = dependencies
+                Task {
+                    do {
+                        print("🟢 [MessageReceiver] Starting download for moment image: \(attachmentId)")
+                        print("🟢 [MessageReceiver] Download URL: \(downloadUrl)")
+                        Log.info("[MessageReceiver] Starting download for moment image: \(attachmentId), URL: \(downloadUrl)")
+                        let storage = deps[singleton: .storage]
+                        
+                        // Update state to downloading
+                        try await storage.writeAsync { db in
+                            _ = try? Attachment
+                                .filter(id: attachmentId)
+                                .updateAll(db, Attachment.Columns.state.set(to: Attachment.State.downloading))
+                            
+                            db.addAttachmentEvent(
+                                id: attachmentId,
+                                messageId: nil,
+                                type: .updated(.state(.downloading))
+                            )
+                        }
+                        
+                        guard let downloadUrlObj = URL(string: downloadUrl) else {
+                            throw AttachmentError.invalidPath
+                        }
+                        
+                        // For FileServer downloads, we don't need authentication
+                        // FileServer downloads are public (or use deterministic encryption)
+                        let request: Network.PreparedRequest<Data> = try Network.FileServer.preparedDownload(
+                            url: downloadUrlObj,
+                            using: deps
+                        )
+                        
+                        print("🟢 [MessageReceiver] Downloading from FileServer: \(downloadUrl)")
+                        Log.info("[MessageReceiver] Downloading from FileServer: \(downloadUrl)")
+                        
+                        // Download the data
+                        let response: Data = try await request
+                            .send(using: deps)
+                            .values
+                            .first(where: { _ in true })?.1 ?? { throw AttachmentError.downloadFailed }()
+                        
+                        print("🟢 [MessageReceiver] Downloaded \(response.count) bytes for attachment: \(attachmentId)")
+                        Log.info("[MessageReceiver] Downloaded \(response.count) bytes for attachment: \(attachmentId)")
+                        
+                        // Check if data needs decryption
+                        let plaintext: Data
+                        let usesDeterministicEncryption: Bool = Network.FileServer
+                            .usesDeterministicEncryption(downloadUrl)
+                        
+                        // Get attachment to check encryption
+                        let attachmentForDecrypt = try await storage.readAsync { db -> Attachment? in
+                            try? Attachment.fetchOne(db, id: attachmentId)
+                        }
+                        
+                        if let attachment = attachmentForDecrypt {
+                            print("🟢 [MessageReceiver] Checking encryption: hasKey=\(attachment.encryptionKey != nil), hasDigest=\(attachment.digest != nil), usesDeterministic=\(usesDeterministicEncryption)")
+                            
+                            switch (attachment.encryptionKey, attachment.digest, usesDeterministicEncryption) {
+                                case (.some(let key), .some(let digest), false) where !key.isEmpty:
+                                    let unpaddedSize = attachment.byteCount > 0 ? attachment.byteCount : UInt(response.count)
+                                    print("🟢 [MessageReceiver] Decrypting with legacy encryption (key size: \(key.count), digest size: \(digest.count), unpaddedSize: \(unpaddedSize), ciphertext size: \(response.count))")
+                                    plaintext = try deps[singleton: .crypto].tryGenerate(
+                                        .legacyDecryptAttachment(
+                                            ciphertext: response,
+                                            key: key,
+                                            digest: digest,
+                                            unpaddedSize: unpaddedSize
+                                        )
+                                    )
+                                    print("🟢 [MessageReceiver] Decrypted: \(response.count) bytes -> \(plaintext.count) bytes")
+                                    
+                                case (.some(let key), _, true) where !key.isEmpty:
+                                    print("🟢 [MessageReceiver] Decrypting with deterministic encryption (key size: \(key.count))")
+                                    plaintext = try deps[singleton: .crypto].tryGenerate(
+                                        .decryptAttachment(
+                                            ciphertext: response,
+                                            key: key
+                                        )
+                                    )
+                                    print("🟢 [MessageReceiver] Decrypted: \(response.count) bytes -> \(plaintext.count) bytes")
+                                    
+                                case (.some(let key), _, false) where !key.isEmpty:
+                                    // Has key but no digest, might be using deterministic encryption without the flag
+                                    print("🟢 [MessageReceiver] Has key but no digest, trying deterministic decryption")
+                                    plaintext = try deps[singleton: .crypto].tryGenerate(
+                                        .decryptAttachment(
+                                            ciphertext: response,
+                                            key: key
+                                        )
+                                    )
+                                    print("🟢 [MessageReceiver] Decrypted: \(response.count) bytes -> \(plaintext.count) bytes")
+                                    
+                                default:
+                                    print("⚠️ [MessageReceiver] No encryption key available, using response as plaintext")
+                                    print("⚠️ [MessageReceiver] Response size: \(response.count) bytes")
+                                    // Check if response looks like encrypted data (usually starts with specific bytes)
+                                    if response.count > 0 {
+                                        let firstBytes = response.prefix(4).map { String(format: "%02x", $0) }.joined()
+                                        print("⚠️ [MessageReceiver] First 4 bytes (hex): \(firstBytes)")
+                                    }
+                                    plaintext = response
+                            }
+                        } else {
+                            print("❌ [MessageReceiver] Attachment not found for decryption check, using plaintext")
+                            plaintext = response
+                        }
+                        
+                        print("🟢 [MessageReceiver] Plaintext size: \(plaintext.count) bytes")
+                        
+                        // Write the data to disk
+                        let updatedAttachment = try await storage.writeAsync { db -> Attachment in
+                            guard var attachment: Attachment = try? Attachment.fetchOne(db, id: attachmentId) else {
+                                print("❌ [MessageReceiver] ERROR: Attachment not found in database: \(attachmentId)")
+                                throw AttachmentError.noAttachment
+                            }
+                            
+                            print("🟢 [MessageReceiver] Writing data to disk for attachment: \(attachmentId)")
+                            
+                            // Write data to file
+                            if !(try attachment.write(data: plaintext, using: deps)) {
+                                print("❌ [MessageReceiver] ERROR: Failed to write data to disk")
+                                throw AttachmentError.writeFailed
+                            }
+                            
+                            print("🟢 [MessageReceiver] Data written successfully, updating attachment state")
+                            
+                            // Update attachment state to downloaded
+                            attachment = try attachment
+                                .with(
+                                    state: .downloaded,
+                                    creationTimestamp: (deps[cache: .snodeAPI].currentOffsetTimestampMs() / 1000),
+                                    using: deps
+                                )
+                            
+                            try attachment.upsert(db)
+                            
+                            print("🟢 [MessageReceiver] Attachment state updated to downloaded: \(attachment.id)")
+                            
+                            // Trigger attachment event
+                            db.addAttachmentEvent(
+                                id: attachment.id,
+                                messageId: nil,
+                                type: .updated(.state(.downloaded))
+                            )
+                            
+                            print("🟢 [MessageReceiver] Attachment event triggered")
+                            
+                            return attachment
+                        }
+                        
+                        print("✅ [MessageReceiver] Successfully downloaded and saved moment image: \(attachmentId)")
+                        Log.info("[MessageReceiver] Successfully downloaded and saved moment image: \(attachmentId)")
+                    } catch {
+                        print("❌ [MessageReceiver] ERROR: Failed to download moment image \(attachmentId) from \(downloadUrl): \(error)")
+                        print("❌ [MessageReceiver] Error type: \(type(of: error))")
+                        print("❌ [MessageReceiver] Error description: \(error.localizedDescription)")
+                        Log.error("[MessageReceiver] Failed to download moment image \(attachmentId) from \(downloadUrl): \(error)")
+                        
+                        let storage = deps[singleton: .storage]
+                        // Update attachment state to failed
+                        try? await storage.writeAsync { db in
+                            _ = try? Attachment
+                                .filter(id: attachmentId)
+                                .updateAll(db, Attachment.Columns.state.set(to: Attachment.State.failedDownload))
+                            
+                            db.addAttachmentEvent(
+                                id: attachmentId,
+                                messageId: nil,
+                                type: .updated(.state(.failedDownload))
+                            )
+                            
+                            print("❌ [MessageReceiver] Updated attachment state to failedDownload: \(attachmentId)")
+                        }
+                    }
+                }
+            }
+        } else if let imageAttachmentIdsString = imageAttachmentIdsString {
+            // Fallback to old format (attachmentIds only, for backward compatibility)
+            attachmentIds = imageAttachmentIdsString
+                .split(separator: ",")
+                .map { String($0).trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+        }
+        
+        // Use attachmentIds for moment record
+        let attachmentIdsString = attachmentIds.isEmpty ? nil : attachmentIds.joined(separator: ",")
+        
         // Create and save moment
         var moment = Moment(
             authorId: sender,
             content: content,
-            imageAttachmentIds: imageAttachmentIdsString,
+            imageAttachmentIds: attachmentIdsString,
             timestampMs: timestampMs
         )
         
         try moment.insert(db)
+    }
+    
+    private static func handleMomentLikeMessage(
+        _ db: ObservingDatabase,
+        sender: String,
+        text: String,
+        using dependencies: Dependencies
+    ) throws {
+        // Extract JSON data from text (remove "__MOMENT_LIKE__:" prefix)
+        let jsonString = String(text.dropFirst("__MOMENT_LIKE__:".count))
+        guard let jsonData = jsonString.data(using: .utf8),
+              let likeData = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+              let momentId = likeData["momentId"] as? Int64 else {
+            Log.warn("[MessageReceiver] Failed to parse like message data")
+            return
+        }
+        
+        // Check if moment exists
+        guard let moment: Moment = try? Moment.fetchOne(db, id: momentId) else {
+            Log.warn("[MessageReceiver] Moment not found for like: \(momentId) from sender: \(sender)")
+            return
+        }
+        
+        // Ensure sender's profile exists (Profile.updateIfNeeded should have been called before this)
+        // But as a fallback, create a default profile if it doesn't exist
+        if (try? Profile.fetchOne(db, id: sender)) == nil {
+            let senderProfile = Profile.fetchOrCreate(db, id: sender)
+            try senderProfile.insert(db)
+            Log.info("[MessageReceiver] Created default profile for like sender: \(sender)")
+        }
+        
+        // Check if like already exists (avoid duplicates)
+        let existingLike = try? MomentLike
+            .filter(MomentLike.Columns.momentId == momentId)
+            .filter(MomentLike.Columns.authorId == sender)
+            .fetchOne(db)
+        
+        guard existingLike == nil else {
+            Log.info("[MessageReceiver] Like already exists from \(sender) for moment \(momentId)")
+            return
+        }
+        
+        // Create and save like
+        let timestampMs = (likeData["timestampMs"] as? Int64) ?? Int64(Date().timeIntervalSince1970 * 1000)
+        let like = MomentLike(
+            momentId: momentId,
+            authorId: sender,
+            timestampMs: timestampMs
+        )
+        
+        try like.insert(db)
+        Log.info("[MessageReceiver] Saved like from \(sender) for moment \(momentId)")
+        
+        // Update moment like count
+        try db.execute(sql: """
+            UPDATE moment
+            SET likeCount = likeCount + 1
+            WHERE id = ?
+        """, arguments: [momentId])
+    }
+    
+    private static func handleMomentCommentMessage(
+        _ db: ObservingDatabase,
+        sender: String,
+        text: String,
+        using dependencies: Dependencies
+    ) throws {
+        // Extract JSON data from text (remove "__MOMENT_COMMENT__:" prefix)
+        let jsonString = String(text.dropFirst("__MOMENT_COMMENT__:".count))
+        guard let jsonData = jsonString.data(using: .utf8),
+              let commentData = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+              let momentId = commentData["momentId"] as? Int64,
+              let content = commentData["content"] as? String else {
+            Log.warn("[MessageReceiver] Failed to parse comment message data")
+            return
+        }
+        
+        // Check if moment exists
+        guard let moment: Moment = try? Moment.fetchOne(db, id: momentId) else {
+            Log.warn("[MessageReceiver] Moment not found for comment: \(momentId) from sender: \(sender)")
+            return
+        }
+        
+        // Ensure sender's profile exists (Profile.updateIfNeeded should have been called before this)
+        // But as a fallback, create a default profile if it doesn't exist
+        if (try? Profile.fetchOne(db, id: sender)) == nil {
+            let senderProfile = Profile.fetchOrCreate(db, id: sender)
+            try senderProfile.insert(db)
+            Log.info("[MessageReceiver] Created default profile for comment sender: \(sender)")
+        }
+        
+        // Create and save comment
+        let timestampMs = (commentData["timestampMs"] as? Int64) ?? Int64(Date().timeIntervalSince1970 * 1000)
+        var comment = MomentComment(
+            momentId: momentId,
+            authorId: sender,
+            content: content,
+            timestampMs: timestampMs
+        )
+        
+        try comment.insert(db)
+        Log.info("[MessageReceiver] Saved comment from \(sender) for moment \(momentId): \(content)")
+        
+        // Update moment comment count
+        try db.execute(sql: """
+            UPDATE moment
+            SET commentCount = commentCount + 1
+            WHERE id = ?
+        """, arguments: [momentId])
     }
 }

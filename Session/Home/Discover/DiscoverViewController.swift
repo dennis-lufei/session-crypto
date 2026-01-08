@@ -2,6 +2,7 @@
 
 import UIKit
 import Combine
+import GRDB
 import SessionUIKit
 import SessionUtilitiesKit
 import SessionMessagingKit
@@ -166,6 +167,7 @@ private class MomentCell: UITableViewCell {
     private weak var viewModel: MomentsViewModel?
     private var dependencies: Dependencies?
     private var imageLoadCancellables: Set<AnyCancellable> = []
+    private var attachmentObservations: [String: DatabaseCancellable] = [:]
     
     private lazy var profilePictureView: ProfilePictureView = ProfilePictureView(size: .list, dataManager: nil)
     
@@ -219,17 +221,19 @@ private class MomentCell: UITableViewCell {
     
     private lazy var likesLabel: UILabel = {
         let result = UILabel()
-        result.font = .systemFont(ofSize: Values.smallFontSize)
-        result.themeTextColor = .textSecondary
+        result.font = .systemFont(ofSize: Values.mediumFontSize)
+        result.themeTextColor = .textPrimary
         result.numberOfLines = 0
+        result.lineBreakMode = .byCharWrapping
         return result
     }()
     
     private lazy var commentsLabel: UILabel = {
         let result = UILabel()
-        result.font = .systemFont(ofSize: Values.smallFontSize)
+        result.font = .systemFont(ofSize: Values.mediumFontSize)
         result.themeTextColor = .textPrimary
         result.numberOfLines = 0
+        result.lineBreakMode = .byCharWrapping
         return result
     }()
     
@@ -255,13 +259,18 @@ private class MomentCell: UITableViewCell {
         actionStack.axis = .horizontal
         actionStack.spacing = Values.largeSpacing
         
+        // 点赞和评论容器
+        let interactionContainer = UIStackView(arrangedSubviews: [likesLabel, commentsLabel])
+        interactionContainer.axis = .vertical
+        interactionContainer.spacing = Values.smallSpacing
+        interactionContainer.alignment = .leading
+        
         let contentStack = UIStackView(arrangedSubviews: [
             headerStack,
             contentLabel,
             imageStackView,
             timeLabel,
-            likesLabel,
-            commentsLabel,
+            interactionContainer,
             actionStack
         ])
         contentStack.axis = .vertical
@@ -304,19 +313,15 @@ private class MomentCell: UITableViewCell {
             using: dependencies
         )
         
-        // Time
+        // Time - 显示相对时间（如"2天前"）
         let date = Date(timeIntervalSince1970: Double(momentWithProfile.moment.timestampMs) / 1000)
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .short
-        timeLabel.text = formatter.string(from: date)
+        timeLabel.text = formatRelativeTime(from: date)
         
-        // Likes
+        // Likes - 改进显示样式，使用中文分隔符
         if !momentWithProfile.likes.isEmpty {
-            let names = momentWithProfile.likes.prefix(3).map { $0.profile.displayName(for: .contact) }
-            let moreCount = momentWithProfile.likes.count - 3
-            let text = names.joined(separator: ", ") + (moreCount > 0 ? " 等\(momentWithProfile.likes.count)人" : "")
-            likesLabel.text = "👍 \(text)"
+            let names = momentWithProfile.likes.map { $0.profile.displayName(for: .contact) }
+            let text = names.joined(separator: "、")
+            likesLabel.text = "❤️ \(text)"
             likesLabel.isHidden = false
         } else {
             likesLabel.isHidden = true
@@ -329,11 +334,12 @@ private class MomentCell: UITableViewCell {
             likeButton.setTitle(NSLocalizedString("👍 赞", comment: "Like"), for: .normal)
         }
         
-        // Comments
+        // Comments - 改进显示样式，支持回复
         if !momentWithProfile.comments.isEmpty {
             let commentTexts = momentWithProfile.comments.map { commentWithProfile in
                 let name = commentWithProfile.profile.displayName(for: .contact)
                 let content = commentWithProfile.comment.content
+                // 检查是否是回复评论（可以通过内容格式判断，或者添加replyTo字段）
                 return "\(name): \(content)"
             }
             commentsLabel.text = commentTexts.joined(separator: "\n")
@@ -351,6 +357,10 @@ private class MomentCell: UITableViewCell {
         
         // Cancel any ongoing image loads
         imageLoadCancellables.removeAll()
+        
+        // Cancel attachment observations
+        attachmentObservations.values.forEach { $0.cancel() }
+        attachmentObservations.removeAll()
         
         // Clear image stack view
         imageStackView.arrangedSubviews.forEach { $0.removeFromSuperview() }
@@ -376,14 +386,34 @@ private class MomentCell: UITableViewCell {
         // Limit to 9 images for display
         let displayIds = Array(attachmentIds.prefix(9))
         
-        // Create a grid layout for images
-        let imagesPerRow = min(3, displayIds.count)
+        // 计算图片尺寸 - 根据图片数量调整
+        let screenWidth = UIScreen.main.bounds.width
+        let padding: CGFloat = Values.largeSpacing * 2
+        let availableWidth = screenWidth - padding
+        let spacing: CGFloat = Values.smallSpacing
+        let imagesPerRow: Int
+        let imageSize: CGFloat
+        
+        // 根据图片数量决定每行显示几个和图片大小
+        switch displayIds.count {
+        case 1:
+            // 单张图片显示更大
+            imagesPerRow = 1
+            imageSize = min(availableWidth * 0.7, 300) // 最大宽度为屏幕的70%或300点
+        case 2, 4:
+            imagesPerRow = 2
+            imageSize = (availableWidth - spacing) / 2
+        default:
+            imagesPerRow = 3
+            imageSize = (availableWidth - CGFloat(imagesPerRow - 1) * spacing) / CGFloat(imagesPerRow)
+        }
+        
         let rows = Int(ceil(Double(displayIds.count) / Double(imagesPerRow)))
         
         for row in 0..<rows {
             let rowStack = UIStackView()
             rowStack.axis = .horizontal
-            rowStack.spacing = Values.smallSpacing
+            rowStack.spacing = spacing
             rowStack.distribution = .fillEqually
             rowStack.alignment = .fill
             
@@ -397,8 +427,8 @@ private class MomentCell: UITableViewCell {
                 imageView.clipsToBounds = true
                 imageView.layer.cornerRadius = 4
                 imageView.themeBackgroundColor = .backgroundSecondary
-                imageView.set(.width, to: 100)
-                imageView.set(.height, to: 100)
+                imageView.set(.width, to: imageSize)
+                imageView.set(.height, to: imageSize)
                 
                 // Load image asynchronously
                 loadImage(attachmentId: attachmentId, imageView: imageView, using: dependencies)
@@ -406,7 +436,7 @@ private class MomentCell: UITableViewCell {
                 rowStack.addArrangedSubview(imageView)
             }
             
-            // Add spacing views to fill remaining space
+            // 如果这一行图片数量不足，添加占位视图
             while rowStack.arrangedSubviews.count < imagesPerRow {
                 let spacer = UIView()
                 spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
@@ -415,49 +445,194 @@ private class MomentCell: UITableViewCell {
             
             imageStackView.addArrangedSubview(rowStack)
         }
+    }
+    
+    private func formatRelativeTime(from date: Date) -> String {
+        let now = Date()
+        let timeInterval = now.timeIntervalSince(date)
         
-        // Show count if there are more images
-        if attachmentIds.count > 9 {
-            let moreLabel = UILabel()
-            moreLabel.text = NSLocalizedString("还有 \(attachmentIds.count - 9) 张图片", comment: "More images")
-            moreLabel.font = .systemFont(ofSize: Values.smallFontSize)
-            moreLabel.themeTextColor = .textSecondary
-            moreLabel.textAlignment = .center
-            imageStackView.addArrangedSubview(moreLabel)
+        if timeInterval < 60 {
+            return NSLocalizedString("刚刚", comment: "Just now")
+        } else if timeInterval < 3600 {
+            let minutes = Int(timeInterval / 60)
+            return String(format: NSLocalizedString("%d分钟前", comment: "%d minutes ago"), minutes)
+        } else if timeInterval < 86400 {
+            let hours = Int(timeInterval / 3600)
+            return String(format: NSLocalizedString("%d小时前", comment: "%d hours ago"), hours)
+        } else if timeInterval < 604800 {
+            let days = Int(timeInterval / 86400)
+            return String(format: NSLocalizedString("%d天前", comment: "%d days ago"), days)
+        } else if timeInterval < 2592000 {
+            let weeks = Int(timeInterval / 604800)
+            return String(format: NSLocalizedString("%d周前", comment: "%d weeks ago"), weeks)
+        } else if timeInterval < 31536000 {
+            let months = Int(timeInterval / 2592000)
+            return String(format: NSLocalizedString("%d个月前", comment: "%d months ago"), months)
+        } else {
+            let years = Int(timeInterval / 31536000)
+            return String(format: NSLocalizedString("%d年前", comment: "%d years ago"), years)
         }
     }
     
     private func loadImage(attachmentId: String, imageView: SessionImageView, using dependencies: Dependencies) {
         imageView.setDataManager(dependencies[singleton: .imageDataManager])
         
-        // Fetch attachment from database
+        // Cancel previous observation for this attachment
+        attachmentObservations[attachmentId]?.cancel()
+        
+        // Fetch attachment from database and observe state changes
         let storage = dependencies[singleton: .storage]
-        storage.read { db in
-            guard let attachment: Attachment = try? Attachment.fetchOne(db, id: attachmentId) else {
-                DispatchQueue.main.async {
-                    // Show placeholder on error
+        let observation = ValueObservation.trackingConstantRegion { db -> Attachment? in
+            try? Attachment.fetchOne(db, id: attachmentId)
+        }
+        
+        let cancellable = storage.start(
+            observation,
+            scheduling: .async(onQueue: .main),
+            onError: { error in
+                Log.error("[MomentCell] Attachment observation failed: \(error)")
+            },
+            onChange: { [weak self, weak imageView] attachment in
+                guard let self = self, let imageView = imageView else { return }
+                
+                guard let attachment = attachment else {
+                    Log.warn("[MomentCell] Attachment not found: \(attachmentId)")
+                    imageView.image = UIImage(systemName: "photo")?.withRenderingMode(.alwaysTemplate)
+                    imageView.themeTintColor = .textSecondary
+                    imageView.contentMode = .center
+                    return
+                }
+                
+                // If still downloading, show placeholder and wait
+                if attachment.state == .pendingDownload || attachment.state == .downloading {
+                    Log.info("[MomentCell] Attachment downloading: \(attachmentId), state: \(attachment.state)")
+                    imageView.image = UIImage(systemName: "photo")?.withRenderingMode(.alwaysTemplate)
+                    imageView.themeTintColor = .textSecondary
+                    imageView.contentMode = .center
+                    return
+                }
+                
+                // If download failed, show placeholder
+                if attachment.state == .failedDownload {
+                    Log.warn("[MomentCell] Attachment download failed: \(attachmentId)")
+                    imageView.image = UIImage(systemName: "photo")?.withRenderingMode(.alwaysTemplate)
+                    imageView.themeTintColor = .textSecondary
+                    imageView.contentMode = .center
+                    return
+                }
+                
+                // If downloaded or uploaded, load the image
+                guard attachment.state == .downloaded || attachment.state == .uploaded else {
+                    print("⚠️ [MomentCell] Attachment state is not ready: \(attachment.state) for \(attachmentId)")
+                    return
+                }
+                
+                print("🟢 [MomentCell] Attachment ready, loading image: \(attachmentId), state: \(attachment.state)")
+                
+                // Cancel observation once we have the image
+                self.attachmentObservations[attachmentId]?.cancel()
+                self.attachmentObservations.removeValue(forKey: attachmentId)
+                
+                // For both uploaded and downloaded states, try to load directly from file first
+                if let downloadUrl = attachment.downloadUrl {
+                    let attachmentManager = dependencies[singleton: .attachmentManager]
+                    print("🟢 [MomentCell] Trying to load image from file for attachment: \(attachmentId)")
+                    print("🟢 [MomentCell] DownloadUrl: \(downloadUrl)")
+                    
+                    if let path = try? attachmentManager.path(for: downloadUrl) {
+                        print("🟢 [MomentCell] File path: \(path)")
+                        
+                        // Check if file exists
+                        let fileManager = dependencies[singleton: .fileManager]
+                        if fileManager.fileExists(atPath: path) {
+                            print("🟢 [MomentCell] File exists, loading image data...")
+                            if let imageData = try? Data(contentsOf: URL(fileURLWithPath: path)) {
+                                print("🟢 [MomentCell] Loaded \(imageData.count) bytes from file")
+                                
+                                // Check file header to see what format it is
+                                if imageData.count >= 4 {
+                                    let header = imageData.prefix(4).map { String(format: "%02x", $0) }.joined()
+                                    print("🟢 [MomentCell] File header (hex): \(header)")
+                                    
+                                    // Check for common image formats
+                                    if header.hasPrefix("ffd8") {
+                                        print("🟢 [MomentCell] Detected JPEG format")
+                                    } else if header.hasPrefix("8950") {
+                                        print("🟢 [MomentCell] Detected PNG format")
+                                    } else if header.hasPrefix("5249") {
+                                        print("🟢 [MomentCell] Detected WebP format (RIFF)")
+                                    } else {
+                                        print("⚠️ [MomentCell] Unknown file format, header: \(header)")
+                                    }
+                                }
+                                
+                                // Try to create UIImage
+                                if let image = UIImage(data: imageData) {
+                                    print("✅ [MomentCell] Successfully created UIImage, size: \(image.size)")
+                                    imageView.image = image
+                                    imageView.contentMode = .scaleAspectFill
+                                    return
+                                } else {
+                                    print("❌ [MomentCell] Failed to create UIImage from data")
+                                    print("❌ [MomentCell] Data size: \(imageData.count) bytes")
+                                    
+                                    // Try using ImageIO directly
+                                    if let imageSource = CGImageSourceCreateWithData(imageData as CFData, nil),
+                                       let cgImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) {
+                                        let uiImage = UIImage(cgImage: cgImage)
+                                        print("✅ [MomentCell] Successfully created UIImage using ImageIO")
+                                        imageView.image = uiImage
+                                        imageView.contentMode = .scaleAspectFill
+                                        return
+                                    } else {
+                                        print("❌ [MomentCell] Failed to create image using ImageIO as well")
+                                    }
+                                }
+                            } else {
+                                print("❌ [MomentCell] Failed to read data from file")
+                            }
+                        } else {
+                            print("❌ [MomentCell] File does not exist at path: \(path)")
+                        }
+                    } else {
+                        print("❌ [MomentCell] Failed to get file path for downloadUrl: \(downloadUrl)")
+                    }
+                } else {
+                    print("❌ [MomentCell] Attachment has no downloadUrl: \(attachmentId)")
+                }
+                
+                // Fallback: Load image using SessionImageView convenience method
+                print("🟢 [MomentCell] Trying SessionImageView.loadImage for attachment: \(attachmentId)")
+                print("🟢 [MomentCell] Attachment state: \(attachment.state), downloadUrl: \(attachment.downloadUrl ?? "nil")")
+                print("🟢 [MomentCell] Attachment isVisualMedia: \(attachment.isVisualMedia)")
+                
+                // Check if ImageDataManager.DataSource.from can create a source
+                if let source = ImageDataManager.DataSource.from(attachment: attachment, using: dependencies) {
+                    print("🟢 [MomentCell] Created ImageDataManager.DataSource successfully")
+                    imageView.loadImage(source) { [weak imageView] buffer in
+                        guard let imageView = imageView else { return }
+                        
+                        if buffer == nil {
+                            print("❌ [MomentCell] Failed to load image for attachment: \(attachmentId)")
+                            Log.warn("[MomentCell] Failed to load image for attachment: \(attachmentId)")
+                            imageView.image = UIImage(systemName: "photo")?.withRenderingMode(.alwaysTemplate)
+                            imageView.themeTintColor = .textSecondary
+                            imageView.contentMode = .center
+                        } else {
+                            print("✅ [MomentCell] Successfully loaded image using SessionImageView for attachment: \(attachmentId)")
+                            imageView.contentMode = .scaleAspectFill
+                        }
+                    }
+                } else {
+                    print("❌ [MomentCell] Failed to create ImageDataManager.DataSource for attachment: \(attachmentId)")
                     imageView.image = UIImage(systemName: "photo")?.withRenderingMode(.alwaysTemplate)
                     imageView.themeTintColor = .textSecondary
                     imageView.contentMode = .center
                 }
-                return
             }
-            
-            // Load image using SessionImageView convenience method
-            DispatchQueue.main.async {
-                imageView.loadImage(attachment: attachment, using: dependencies) { [weak imageView] buffer in
-                    guard let imageView = imageView else { return }
-                    
-                    if buffer == nil {
-                        imageView.image = UIImage(systemName: "photo")?.withRenderingMode(.alwaysTemplate)
-                        imageView.themeTintColor = .textSecondary
-                        imageView.contentMode = .center
-                    } else {
-                        imageView.contentMode = .scaleAspectFill
-                    }
-                }
-            }
-        }
+        )
+        
+        attachmentObservations[attachmentId] = cancellable
     }
     
     @objc private func likeButtonTapped() {

@@ -178,28 +178,52 @@ final class PostMomentViewController: BaseVC {
             return
         }
         
-        // 保存图片到临时目录并获取路径（简化版：使用 base64 编码存储，实际应该上传到服务器）
-        let imageAttachmentIds: [String] = selectedImages.map { image in
-            // 简化处理：使用 UUID 作为临时 ID
-            // 实际应用中应该上传图片到服务器并获取真实的 attachment ID
-            UUID().uuidString
-        }
+        // Disable post button during upload
+        navigationItem.rightBarButtonItem?.isEnabled = false
         
-        do {
-            try viewModel.createMoment(
-                content: content.isEmpty ? nil : content,
-                imageAttachmentIds: imageAttachmentIds
-            )
-            dismiss(animated: true)
-        } catch {
-            Log.error("[PostMomentViewController] Failed to create moment: \(error)")
-            let alert = UIAlertController(
-                title: NSLocalizedString("错误", comment: "Error"),
-                message: NSLocalizedString("发布失败", comment: "Post failed"),
-                preferredStyle: .alert
-            )
-            alert.addAction(UIAlertAction(title: NSLocalizedString("确定", comment: "OK"), style: .default))
-            present(alert, animated: true)
+        Task {
+            do {
+                print("🔵 [PostMomentViewController] Starting to create moment")
+                print("🔵 [PostMomentViewController] Has images: \(!selectedImages.isEmpty), image count: \(selectedImages.count)")
+                print("🔵 [PostMomentViewController] Content: \(content.isEmpty ? "empty" : content)")
+                
+                if !selectedImages.isEmpty {
+                    // Create moment with images (will upload and create attachments)
+                    print("🔵 [PostMomentViewController] Calling createMomentWithImages...")
+                    try await viewModel.createMomentWithImages(
+                        content: content.isEmpty ? nil : content,
+                        images: selectedImages
+                    )
+                    print("🔵 [PostMomentViewController] createMomentWithImages completed successfully")
+                } else {
+                    // Create moment without images
+                    print("🔵 [PostMomentViewController] Calling createMoment (no images)...")
+                    try viewModel.createMoment(
+                        content: content.isEmpty ? nil : content,
+                        imageAttachmentIds: []
+                    )
+                    print("🔵 [PostMomentViewController] createMoment completed successfully")
+                }
+                
+                await MainActor.run {
+                    print("🔵 [PostMomentViewController] Dismissing view controller")
+                    dismiss(animated: true)
+                }
+            } catch {
+                print("❌ [PostMomentViewController] ERROR: Failed to create moment: \(error)")
+                print("❌ [PostMomentViewController] Error details: \(error.localizedDescription)")
+                Log.error("[PostMomentViewController] Failed to create moment: \(error)")
+                await MainActor.run {
+                    navigationItem.rightBarButtonItem?.isEnabled = true
+                    let alert = UIAlertController(
+                        title: NSLocalizedString("错误", comment: "Error"),
+                        message: NSLocalizedString("发布失败: \(error.localizedDescription)", comment: "Post failed"),
+                        preferredStyle: .alert
+                    )
+                    alert.addAction(UIAlertAction(title: NSLocalizedString("确定", comment: "OK"), style: .default))
+                    present(alert, animated: true)
+                }
+            }
         }
     }
     

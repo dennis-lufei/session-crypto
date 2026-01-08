@@ -160,16 +160,16 @@ public class MomentsViewModel: ObservableObject {
                 let momentLikes = likesByMomentId[moment.id ?? -1] ?? []
                 let isLikedByCurrentUser = momentLikes.contains { $0.authorId == currentUserId }
                 
-                // Build likes with profiles
-                let likesWithProfiles: [MomentLikeWithProfile] = momentLikes.compactMap { like in
-                    guard let likeProfile = likeProfilesById[like.authorId] else { return nil }
+                // Build likes with profiles (create default profile if not found)
+                let likesWithProfiles: [MomentLikeWithProfile] = momentLikes.map { like in
+                    let likeProfile = likeProfilesById[like.authorId] ?? Profile.defaultFor(like.authorId)
                     return MomentLikeWithProfile(like: like, profile: likeProfile)
                 }
                 
-                // Build comments with profiles
+                // Build comments with profiles (create default profile if not found)
                 let momentComments = commentsByMomentId[moment.id ?? -1] ?? []
-                let commentsWithProfiles: [MomentCommentWithProfile] = momentComments.compactMap { comment in
-                    guard let commentProfile = commentProfilesById[comment.authorId] else { return nil }
+                let commentsWithProfiles: [MomentCommentWithProfile] = momentComments.map { comment in
+                    let commentProfile = commentProfilesById[comment.authorId] ?? Profile.defaultFor(comment.authorId)
                     return MomentCommentWithProfile(comment: comment, profile: commentProfile)
                 }
                 
@@ -207,10 +207,159 @@ public class MomentsViewModel: ObservableObject {
     
     // MARK: - Actions
     
-    public func createMoment(content: String?, imageAttachmentIds: [String]) throws {
+    public func createMomentWithImages(content: String?, images: [UIImage]) async throws {
+        let deps = dependencies
+        let storage = deps[singleton: .storage]
+        var uploadedAttachments: [Attachment] = []
+        
+        // Upload images to server
+        for image in images {
+            // First, save UIImage to a temporary file
+            let tempFilePath = deps[singleton: .fileManager].temporaryFilePath()
+            
+            // Convert UIImage to JPEG data and save to temp file
+            guard let imageData = image.jpegData(compressionQuality: 0.9) else {
+                Log.error("[MomentsViewModel] Failed to convert UIImage to JPEG data")
+                throw MomentsError.networkError(NSError(domain: "MomentsViewModel", code: -1, userInfo: [NSLocalizedDescriptionKey: "无法处理图片"]))
+            }
+            
+            try deps[singleton: .fileManager].write(data: imageData, toPath: tempFilePath)
+            
+            // Create PendingAttachment from file URL
+            let tempFileURL = URL(fileURLWithPath: tempFilePath)
+            let pendingAttachment = PendingAttachment(
+                source: .media(.url(tempFileURL)),
+                using: deps
+            )
+            
+            // Prepare attachment (strip metadata, convert format)
+            let preparedAttachment = try await pendingAttachment.prepare(
+                operations: [
+                    .stripImageMetadata,
+                    .convert(to: .webPLossy(
+                        maxDimension: 2048,
+                        cropRect: nil,
+                        resizeMode: .fit,
+                        compressionQuality: 0.8
+                    ))
+                ],
+                storeAtPendingAttachmentUploadPath: true,
+                using: deps
+            )
+            
+            // Clean up temp file
+            try? deps[singleton: .fileManager].removeItem(atPath: tempFilePath)
+            
+            // Get authentication method for contact thread (use current user's thread for auth)
+            let currentUserId = userSessionId.hexString
+            let authMethod: AuthenticationMethod = try await storage.readAsync { db in
+                return try Authentication.with(
+                    db,
+                    threadId: currentUserId,
+                    threadVariant: .contact,
+                    using: deps
+                )
+            }
+            
+            // Upload attachment
+            Log.info("[MomentsViewModel] Starting upload for attachment: \(preparedAttachment.attachment.id)")
+            Log.info("[MomentsViewModel] Prepared attachment state: \(preparedAttachment.attachment.state)")
+            Log.info("[MomentsViewModel] Prepared attachment downloadUrl: \(preparedAttachment.attachment.downloadUrl ?? "nil")")
+            
+            let (uploadedAttachment, uploadResponse) = try await AttachmentUploadJob.upload(
+                attachment: preparedAttachment.attachment,
+                threadId: currentUserId,
+                interactionId: nil,
+                messageSendJobId: nil,
+                authMethod: authMethod,
+                onEvent: AttachmentUploadJob.standardEventHandling(using: deps),
+                using: deps
+            )
+            
+            Log.info("[MomentsViewModel] Upload completed for attachment: \(uploadedAttachment.id)")
+            Log.info("[MomentsViewModel] Uploaded attachment state: \(uploadedAttachment.state)")
+            Log.info("[MomentsViewModel] Uploaded attachment downloadUrl: \(uploadedAttachment.downloadUrl ?? "nil")")
+            Log.info("[MomentsViewModel] Upload response fileId: \(uploadResponse.id)")
+            
+            // Save uploaded attachment to database
+            try await storage.writeAsync { db in
+                try uploadedAttachment.upsert(db)
+            }
+            
+            uploadedAttachments.append(uploadedAttachment)
+        }
+        
+        // Extract attachment IDs and download URLs
+        let attachmentIds = uploadedAttachments.map { $0.id }
+        let downloadUrls = uploadedAttachments.compactMap { $0.downloadUrl }
+        
+        // Extract encryption keys, digests, and byteCounts (for decryption on receiver side)
+        var encryptionKeys: [String?] = []
+        var digests: [String?] = []
+        var byteCounts: [UInt] = []
+        for attachment in uploadedAttachments {
+            encryptionKeys.append(attachment.encryptionKey?.toHexString())
+            digests.append(attachment.digest?.toHexString())
+            byteCounts.append(attachment.byteCount)
+        }
+        
+        print("🔵 [MomentsViewModel] ========== UPLOAD SUMMARY ==========")
+        print("🔵 [MomentsViewModel] Uploaded \(uploadedAttachments.count) attachments")
+        print("🔵 [MomentsViewModel] Attachment IDs: \(attachmentIds)")
+        print("🔵 [MomentsViewModel] Download URLs count: \(downloadUrls.count)")
+        for (index, url) in downloadUrls.enumerated() {
+            print("🔵 [MomentsViewModel] Download URL[\(index)]: \(url)")
+            print("🔵 [MomentsViewModel] EncryptionKey[\(index)]: \(encryptionKeys[index] ?? "nil")")
+            print("🔵 [MomentsViewModel] Digest[\(index)]: \(digests[index] ?? "nil")")
+            print("🔵 [MomentsViewModel] ByteCount[\(index)]: \(byteCounts[index])")
+        }
+        for (index, attachment) in uploadedAttachments.enumerated() {
+            print("🔵 [MomentsViewModel] Attachment[\(index)]: id=\(attachment.id), downloadUrl=\(attachment.downloadUrl ?? "nil"), state=\(attachment.state), byteCount=\(attachment.byteCount), hasEncryptionKey=\(attachment.encryptionKey != nil), hasDigest=\(attachment.digest != nil)")
+        }
+        print("🔵 [MomentsViewModel] =====================================")
+        
+        Log.info("[MomentsViewModel] Uploaded \(uploadedAttachments.count) attachments")
+        Log.info("[MomentsViewModel] Attachment IDs: \(attachmentIds)")
+        Log.info("[MomentsViewModel] Download URLs: \(downloadUrls)")
+        
+        // Validate that we have download URLs
+        guard !downloadUrls.isEmpty else {
+            print("❌ [MomentsViewModel] ERROR: No download URLs after upload!")
+            Log.error("[MomentsViewModel] No download URLs after upload!")
+            for attachment in uploadedAttachments {
+                Log.error("[MomentsViewModel] Attachment \(attachment.id): downloadUrl=\(attachment.downloadUrl ?? "nil"), state=\(attachment.state)")
+            }
+            throw MomentsError.networkError(NSError(domain: "MomentsViewModel", code: -1, userInfo: [NSLocalizedDescriptionKey: "上传失败：未获取到下载链接"]))
+        }
+        
+        // Extract encryption keys, digests, and byteCounts as non-optional strings
+        let encryptionKeysStrings = encryptionKeys.map { $0 ?? "" }
+        let digestsStrings = digests.map { $0 ?? "" }
+        let byteCountsStrings = byteCounts.map { String($0) }
+        
+        // Create moment with attachment IDs and download URLs
+        try createMoment(
+            content: content,
+            imageAttachmentIds: attachmentIds,
+            imageDownloadUrls: downloadUrls,
+            imageEncryptionKeys: encryptionKeysStrings,
+            imageDigests: digestsStrings,
+            imageByteCounts: byteCountsStrings
+        )
+    }
+    
+    public func createMoment(
+        content: String?,
+        imageAttachmentIds: [String],
+        imageDownloadUrls: [String] = [],
+        imageEncryptionKeys: [String] = [],
+        imageDigests: [String] = [],
+        imageByteCounts: [String] = []
+    ) throws {
         let currentUserId = userSessionId.hexString
         let timestampMs = Int64(Date().timeIntervalSince1970 * 1000)
         let attachmentIdsString = imageAttachmentIds.isEmpty ? nil : imageAttachmentIds.joined(separator: ",")
+        let downloadUrlsString = imageDownloadUrls.isEmpty ? nil : imageDownloadUrls.joined(separator: ",")
         
         // Validate that we have either content or images
         guard content?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false || !imageAttachmentIds.isEmpty else {
@@ -221,14 +370,14 @@ public class MomentsViewModel: ObservableObject {
         let storage = dependencies[singleton: .storage]
         do {
             try storage.write { db in
-                var moment = Moment(
-                    authorId: currentUserId,
-                    content: content,
-                    imageAttachmentIds: attachmentIdsString,
-                    timestampMs: timestampMs
-                )
-                
-                try moment.insert(db)
+            var moment = Moment(
+                authorId: currentUserId,
+                content: content,
+                imageAttachmentIds: attachmentIdsString,
+                timestampMs: timestampMs
+            )
+            
+            try moment.insert(db)
             }
         } catch {
             Log.error("[MomentsViewModel] Failed to save moment: \(error)")
@@ -236,19 +385,21 @@ public class MomentsViewModel: ObservableObject {
         }
         
         // Send to all approved contacts (non-blocking, errors are logged but don't fail the operation)
-        storage.writeAsync { db in
+        storage.writeAsync { [weak self] db in
+            guard let self = self else { return }
+            
             let contact: TypedTableAlias<Contact> = TypedTableAlias()
             
             // Get all approved contacts (excluding current user)
             let contactIds: [String]
             do {
                 contactIds = try Contact
-                    .filter(contact[.isApproved] == true)
-                    .filter(contact[.isBlocked] == false)
-                    .filter(contact[.id] != currentUserId)
-                    .select(.id)
-                    .asRequest(of: String.self)
-                    .fetchAll(db)
+                .filter(contact[.isApproved] == true)
+                .filter(contact[.isBlocked] == false)
+                .filter(contact[.id] != currentUserId)
+                .select(.id)
+                .asRequest(of: String.self)
+                .fetchAll(db)
             } catch {
                 Log.error("[MomentsViewModel] Failed to fetch contacts: \(error)")
                 return
@@ -256,20 +407,55 @@ public class MomentsViewModel: ObservableObject {
             
             guard !contactIds.isEmpty else { return }
             
-            // Create JSON data for moment
-            let momentData: [String: Any] = [
+            // Create JSON data for moment (include both attachmentIds and downloadUrls)
+            var momentData: [String: Any] = [
                 "content": content ?? NSNull(),
-                "imageAttachmentIds": attachmentIdsString ?? NSNull(),
                 "timestampMs": timestampMs
             ]
             
+            // Include attachmentIds for backward compatibility
+            if let attachmentIdsString = attachmentIdsString {
+                momentData["imageAttachmentIds"] = attachmentIdsString
+            }
+            
+            // Include downloadUrls for new clients to download images
+            if let downloadUrlsString = downloadUrlsString {
+                momentData["imageDownloadUrls"] = downloadUrlsString
+                print("🔵 [MomentsViewModel] Including downloadUrls in message: \(downloadUrlsString)")
+                Log.info("[MomentsViewModel] Including downloadUrls in message: \(downloadUrlsString)")
+            } else {
+                print("⚠️ [MomentsViewModel] WARNING: No downloadUrls to include in message!")
+                Log.warn("[MomentsViewModel] No downloadUrls to include in message!")
+            }
+            
+            // Include encryption keys, digests, and byteCounts if available (for decryption)
+            let encryptionKeysString = imageEncryptionKeys.joined(separator: ",")
+            let digestsString = imageDigests.joined(separator: ",")
+            let byteCountsString = imageByteCounts.joined(separator: ",")
+            if !encryptionKeysString.isEmpty && encryptionKeysString != String(repeating: ",", count: max(0, imageEncryptionKeys.count - 1)) {
+                momentData["imageEncryptionKeys"] = encryptionKeysString
+                print("🔵 [MomentsViewModel] Including encryptionKeys in message: \(encryptionKeysString.prefix(50))...")
+            }
+            if !digestsString.isEmpty && digestsString != String(repeating: ",", count: max(0, imageDigests.count - 1)) {
+                momentData["imageDigests"] = digestsString
+                print("🔵 [MomentsViewModel] Including digests in message: \(digestsString.prefix(50))...")
+            }
+            if !byteCountsString.isEmpty && byteCountsString != String(repeating: ",", count: max(0, imageByteCounts.count - 1)) {
+                momentData["imageByteCounts"] = byteCountsString
+                print("🔵 [MomentsViewModel] Including byteCounts in message: \(byteCountsString)")
+            }
+            
             guard let jsonData = try? JSONSerialization.data(withJSONObject: momentData),
                   let jsonString = String(data: jsonData, encoding: .utf8) else {
+                print("❌ [MomentsViewModel] ERROR: Failed to serialize moment data")
                 Log.error("[MomentsViewModel] Failed to serialize moment data")
                 return
             }
             
             let momentText = "__MOMENT__:\(jsonString)"
+            print("🔵 [MomentsViewModel] Sending moment message to \(contactIds.count) contacts")
+            print("🔵 [MomentsViewModel] Message preview: \(String(momentText.prefix(200)))...")
+            Log.info("[MomentsViewModel] Sending moment message to \(contactIds.count) contacts")
             
             // Send to each contact
             var successCount = 0
@@ -301,7 +487,18 @@ public class MomentsViewModel: ObservableObject {
     public func toggleLike(momentId: Int64) throws {
         let currentUserId = userSessionId.hexString
         let storage = dependencies[singleton: .storage]
+        
+        // Get moment author to send notification
+        var momentAuthorId: String?
+        var isLiking: Bool = false
+        
         try storage.write { db in
+            // Get moment to find author
+            guard let moment: Moment = try? Moment.fetchOne(db, id: momentId) else {
+                throw MomentsError.databaseError(NSError(domain: "MomentsViewModel", code: -1, userInfo: [NSLocalizedDescriptionKey: "Moment not found"]))
+            }
+            momentAuthorId = moment.authorId
+            
             let timestampMs = Int64(Date().timeIntervalSince1970 * 1000)
             
             // Check if already liked
@@ -313,6 +510,7 @@ public class MomentsViewModel: ObservableObject {
             if let existingLike = existingLike {
                 // Unlike
                 try existingLike.delete(db)
+                isLiking = false
                 
                 // Update moment like count
                 try db.execute(sql: """
@@ -328,6 +526,7 @@ public class MomentsViewModel: ObservableObject {
                     timestampMs: timestampMs
                 )
                 try like.insert(db)
+                isLiking = true
                 
                 // Update moment like count
                 try db.execute(sql: """
@@ -337,12 +536,55 @@ public class MomentsViewModel: ObservableObject {
                 """, arguments: [momentId])
             }
         }
+        
+        // Send like notification to moment author (if not current user)
+        if let authorId = momentAuthorId, authorId != currentUserId, isLiking {
+            storage.writeAsync { [weak self] db in
+                guard let self = self else { return }
+                
+                let likeData: [String: Any] = [
+                    "type": "like",
+                    "momentId": momentId,
+                    "timestampMs": Int64(Date().timeIntervalSince1970 * 1000)
+                ]
+                
+                guard let jsonData = try? JSONSerialization.data(withJSONObject: likeData),
+                      let jsonString = String(data: jsonData, encoding: .utf8) else {
+                    return
+                }
+                
+                let likeText = "__MOMENT_LIKE__:\(jsonString)"
+                
+                do {
+                    try MessageSender.send(
+                        db,
+                        message: VisibleMessage(text: likeText),
+                        interactionId: nil,
+                        threadId: authorId,
+                        threadVariant: .contact,
+                        using: self.dependencies
+                    )
+                } catch {
+                    Log.error("[MomentsViewModel] Failed to send like notification: \(error)")
+                }
+            }
+        }
     }
     
     public func addComment(momentId: Int64, content: String) throws {
         let currentUserId = userSessionId.hexString
         let storage = dependencies[singleton: .storage]
+        
+        // Get moment author to send notification
+        var momentAuthorId: String?
+        
         try storage.write { db in
+            // Get moment to find author
+            guard let moment: Moment = try? Moment.fetchOne(db, id: momentId) else {
+                throw MomentsError.databaseError(NSError(domain: "MomentsViewModel", code: -1, userInfo: [NSLocalizedDescriptionKey: "Moment not found"]))
+            }
+            momentAuthorId = moment.authorId
+            
             let timestampMs = Int64(Date().timeIntervalSince1970 * 1000)
             
             var comment = MomentComment(
@@ -361,13 +603,47 @@ public class MomentsViewModel: ObservableObject {
                 WHERE id = ?
             """, arguments: [momentId])
         }
+        
+        // Send comment notification to moment author (if not current user)
+        if let authorId = momentAuthorId, authorId != currentUserId {
+            storage.writeAsync { [weak self] db in
+                guard let self = self else { return }
+                
+                let commentData: [String: Any] = [
+                    "type": "comment",
+                    "momentId": momentId,
+                    "content": content,
+                    "timestampMs": Int64(Date().timeIntervalSince1970 * 1000)
+                ]
+                
+                guard let jsonData = try? JSONSerialization.data(withJSONObject: commentData),
+                      let jsonString = String(data: jsonData, encoding: .utf8) else {
+                    return
+                }
+                
+                let commentText = "__MOMENT_COMMENT__:\(jsonString)"
+                
+                do {
+                    try MessageSender.send(
+                        db,
+                        message: VisibleMessage(text: commentText),
+                        interactionId: nil,
+                        threadId: authorId,
+                        threadVariant: .contact,
+                        using: self.dependencies
+                    )
+                } catch {
+                    Log.error("[MomentsViewModel] Failed to send comment notification: \(error)")
+                }
+            }
+        }
     }
     
     public func deleteMoment(momentId: Int64) throws {
         let storage = dependencies[singleton: .storage]
         do {
             try storage.write { db in
-                try Moment.filter(Moment.Columns.id == momentId).deleteAll(db)
+            try Moment.filter(Moment.Columns.id == momentId).deleteAll(db)
             }
         } catch {
             Log.error("[MomentsViewModel] Failed to delete moment: \(error)")
