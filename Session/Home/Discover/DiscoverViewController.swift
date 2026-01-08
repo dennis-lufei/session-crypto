@@ -171,7 +171,11 @@ private class MomentCell: UITableViewCell {
     private var imageLoadCancellables: Set<AnyCancellable> = []
     private var attachmentObservations: [String: DatabaseCancellable] = [:]
     
-    private lazy var profilePictureView: ProfilePictureView = ProfilePictureView(size: .list, dataManager: nil)
+    private lazy var profilePictureView: ProfilePictureView = {
+        let view = ProfilePictureView(size: .list, dataManager: nil)
+        view.customWidth = 40  // Override default width of 46 to 40
+        return view
+    }()
     
     private lazy var nameLabel: UILabel = {
         let result = UILabel()
@@ -258,7 +262,7 @@ private class MomentCell: UITableViewCell {
         contentStack.pin(.top, to: .top, of: contentView, withInset: Values.mediumSpacing)
         contentStack.pin(.bottom, to: .bottom, of: contentView, withInset: -Values.mediumSpacing)
         
-        profilePictureView.set(.width, to: 40)
+        // ProfilePictureView size is set via customWidth property, height is set by size
         profilePictureView.set(.height, to: 40)
     }
     
