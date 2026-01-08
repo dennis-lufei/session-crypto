@@ -253,6 +253,17 @@ public enum MessageReceiver {
         suppressNotifications: Bool,
         using dependencies: Dependencies
     ) throws -> InsertedInteractionInfo? {
+        // Log all incoming messages for debugging
+        if let visibleMessage = message as? VisibleMessage,
+           let text = visibleMessage.text,
+           let sender = message.sender {
+            print("🟡 [MessageReceiver] Received VisibleMessage from \(sender)")
+            print("🟡 [MessageReceiver] Message text preview: \(String(text.prefix(200)))")
+            if text.hasPrefix("__MOMENT_DELETE__:") {
+                print("🟡 [MessageReceiver] This is a MOMENT DELETE message!")
+            }
+        }
+        
         /// Throw if the message is outdated and shouldn't be processed (this is based on pretty flaky logic which checks if the config
         /// has been updated since the message was sent - this should be reworked to be less edge-case prone in the future)
         try throwIfMessageOutdated(
@@ -307,6 +318,34 @@ public enum MessageReceiver {
                 return nil
             }
             
+            // Handle moment delete
+            if text.hasPrefix("__MOMENT_DELETE__:") {
+                print("🟢 [MessageReceiver] Detected moment delete message from \(sender)")
+                print("🟢 [MessageReceiver] Message text preview: \(String(text.prefix(100)))")
+                Log.info("[MessageReceiver] Detected moment delete message from \(sender)")
+                
+                // Update profile if available
+                if let profile = visibleMessage.profile {
+                    try Profile.updateIfNeeded(
+                        db,
+                        publicKey: sender,
+                        displayNameUpdate: .contactUpdate(profile.displayName),
+                        displayPictureUpdate: .from(profile, fallback: .contactRemove, using: dependencies),
+                        blocksCommunityMessageRequests: .set(to: profile.blocksCommunityMessageRequests),
+                        profileUpdateTimestamp: profile.updateTimestampSeconds,
+                        using: dependencies
+                    )
+                }
+                
+                try handleMomentDeleteMessage(
+                    db,
+                    sender: sender,
+                    text: text,
+                    using: dependencies
+                )
+                // Return nil to skip creating Interaction for moment delete messages
+                return nil
+            }
         }
         
         let interactionInfo: InsertedInteractionInfo?
@@ -965,4 +1004,103 @@ public enum MessageReceiver {
         try moment.insert(db)
     }
     
+    private static func handleMomentDeleteMessage(
+        _ db: ObservingDatabase,
+        sender: String,
+        text: String,
+        using dependencies: Dependencies
+    ) throws {
+        print("🟢 [MessageReceiver] handleMomentDeleteMessage called for sender: \(sender)")
+        print("🟢 [MessageReceiver] Full message text: \(text)")
+        
+        // Extract JSON data from text (remove "__MOMENT_DELETE__:" prefix)
+        let jsonString = String(text.dropFirst("__MOMENT_DELETE__:".count))
+        print("🟢 [MessageReceiver] Extracted JSON string: \(jsonString)")
+        
+        guard let jsonData = jsonString.data(using: .utf8) else {
+            print("❌ [MessageReceiver] Failed to convert JSON string to data")
+            Log.warn("[MessageReceiver] Failed to convert JSON string to data")
+            return
+        }
+        
+        guard let deleteData = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else {
+            print("❌ [MessageReceiver] Failed to parse JSON data")
+            Log.warn("[MessageReceiver] Failed to parse JSON data")
+            return
+        }
+        
+        print("🟢 [MessageReceiver] Parsed delete data: \(deleteData)")
+        
+        guard let momentId = deleteData["momentId"] as? Int64,
+              let authorId = deleteData["authorId"] as? String else {
+            print("❌ [MessageReceiver] Failed to extract momentId or authorId from delete data")
+            print("❌ [MessageReceiver] momentId type: \(type(of: deleteData["momentId"])), value: \(String(describing: deleteData["momentId"]))")
+            print("❌ [MessageReceiver] authorId type: \(type(of: deleteData["authorId"])), value: \(String(describing: deleteData["authorId"]))")
+            Log.warn("[MessageReceiver] Failed to parse moment delete message data")
+            return
+        }
+        
+        print("🟢 [MessageReceiver] ========== RECEIVED MOMENT DELETE ==========")
+        print("🟢 [MessageReceiver] Moment ID (from sender): \(momentId)")
+        print("🟢 [MessageReceiver] Author ID: \(authorId)")
+        print("🟢 [MessageReceiver] Sender: \(sender)")
+        
+        // Verify that the sender is the author (security check)
+        guard sender == authorId else {
+            print("❌ [MessageReceiver] Security check failed: sender (\(sender)) does not match author (\(authorId))")
+            Log.warn("[MessageReceiver] Delete message sender (\(sender)) does not match author (\(authorId)), ignoring")
+            return
+        }
+        print("✅ [MessageReceiver] Security check passed: sender matches author")
+        
+        // Get timestampMs from delete data (if available)
+        let timestampMs = deleteData["timestampMs"] as? Int64
+        
+        // Find moment by authorId and timestampMs (not by id, because id is auto-incremented and may differ between devices)
+        let moment: Moment?
+        if let timestampMs = timestampMs {
+            print("🟢 [MessageReceiver] Looking for moment with authorId=\(authorId), timestampMs=\(timestampMs)")
+            moment = try? Moment
+                .filter(Moment.Columns.authorId == authorId)
+                .filter(Moment.Columns.timestampMs == timestampMs)
+                .fetchOne(db)
+        } else {
+            // Fallback: try to find by id first (for backward compatibility)
+            print("🟢 [MessageReceiver] No timestampMs in delete data, trying to find by id: \(momentId)")
+            moment = try? Moment.fetchOne(db, id: momentId)
+        }
+        
+        guard let momentToDelete = moment else {
+            print("⚠️ [MessageReceiver] Moment not found in database (authorId: \(authorId), timestampMs: \(String(describing: timestampMs)), id: \(momentId))")
+            Log.info("[MessageReceiver] Moment not found (may have been already deleted)")
+            return
+        }
+        
+        let actualMomentId = momentToDelete.id ?? -1
+        print("✅ [MessageReceiver] Moment found in database (id: \(actualMomentId), authorId: \(momentToDelete.authorId), timestampMs: \(momentToDelete.timestampMs))")
+        
+        // Verify that the moment belongs to the sender (additional security check)
+        guard momentToDelete.authorId == sender else {
+            print("❌ [MessageReceiver] Security check failed: Moment authorId (\(momentToDelete.authorId)) does not match sender (\(sender))")
+            Log.warn("[MessageReceiver] Moment does not belong to sender \(sender), ignoring delete")
+            return
+        }
+        print("✅ [MessageReceiver] Security check passed: moment belongs to sender")
+        
+        // Delete the moment using its actual id
+        print("🟢 [MessageReceiver] Attempting to delete moment (id: \(actualMomentId))...")
+        let deletedCount = try Moment.filter(Moment.Columns.id == actualMomentId).deleteAll(db)
+        print("🟢 [MessageReceiver] Deleted \(deletedCount) moment(s) with id \(actualMomentId)")
+        
+        // Verify deletion
+        if let stillExists = try? Moment.fetchOne(db, id: actualMomentId) {
+            print("⚠️ [MessageReceiver] WARNING: Moment \(actualMomentId) still exists after deletion!")
+            Log.warn("[MessageReceiver] Moment \(actualMomentId) still exists after deletion!")
+        } else {
+            print("✅ [MessageReceiver] Verified: Moment \(actualMomentId) successfully deleted")
+            Log.info("[MessageReceiver] Deleted moment \(actualMomentId) from sender \(sender)")
+        }
+        
+        print("🟢 [MessageReceiver] ============================================")
+    }
 }

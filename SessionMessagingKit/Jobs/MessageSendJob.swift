@@ -33,6 +33,16 @@ public enum MessageSendJob: JobExecutor {
             let details: Details = try? JSONDecoder(using: dependencies).decode(Details.self, from: detailsData)
         else { return failure(job, JobRunnerError.missingRequiredDetails, true) }
         
+        // Log moment delete messages
+        if let visibleMessage = details.message as? VisibleMessage,
+           let text = visibleMessage.text,
+           text.hasPrefix("__MOMENT_DELETE__:") {
+            print("🟡 [MessageSendJob] Processing MOMENT DELETE message send job")
+            print("🟡 [MessageSendJob] ThreadId: \(threadId)")
+            print("🟡 [MessageSendJob] Destination: \(details.destination)")
+            print("🟡 [MessageSendJob] Message text preview: \(String(text.prefix(200)))")
+        }
+        
         /// We need to include `fileIds` when sending messages with attachments to Open Groups so extract them from any
         /// associated attachments
         var messageAttachments: [(attachment: Attachment, fileId: String)] = []
@@ -79,7 +89,8 @@ public enum MessageSendJob: JobExecutor {
             details.message is VisibleMessage,
             let visibleMessage = details.message as? VisibleMessage,
             visibleMessage.reaction == nil,
-            !(visibleMessage.text?.hasPrefix("__MOMENT__:") ?? false)  // Skip attachment check for moment messages
+            !(visibleMessage.text?.hasPrefix("__MOMENT__:") ?? false),  // Skip attachment check for moment messages
+            !(visibleMessage.text?.hasPrefix("__MOMENT_DELETE__:") ?? false)  // Skip attachment check for moment delete messages
         {
             guard
                 let jobId: Int64 = job.id,
@@ -211,6 +222,14 @@ public enum MessageSendJob: JobExecutor {
         ///
         /// **Note:** No need to upload attachments as part of this process as the above logic splits that out into it's own job
         /// so we shouldn't get here until attachments have already been uploaded
+        
+        // Log moment delete messages before starting the send process
+        if let visibleMessage = details.message as? VisibleMessage,
+           let text = visibleMessage.text,
+           text.hasPrefix("__MOMENT_DELETE__:") {
+            print("🟡 [MessageSendJob] Starting send process for MOMENT DELETE message")
+        }
+        
         dependencies[singleton: .storage]
             .readPublisher(value: { [dependencies] db -> AuthenticationMethod in
                 try Authentication.with(
@@ -226,14 +245,38 @@ public enum MessageSendJob: JobExecutor {
                 )
             })
             .tryFlatMap { authMethod in
-                try MessageSender.preparedSend(
+                // Log before sending
+                if let visibleMessage = details.message as? VisibleMessage,
+                   let text = visibleMessage.text,
+                   text.hasPrefix("__MOMENT_DELETE__:") {
+                    print("🟡 [MessageSendJob] About to send MOMENT DELETE message to network")
+                }
+                
+                return try MessageSender.preparedSend(
                     message: details.message,
                     to: details.destination,
                     namespace: details.destination.defaultNamespace,
                     interactionId: job.interactionId,
                     attachments: messageAttachments,
                     authMethod: authMethod,
-                    onEvent: MessageSender.standardEventHandling(using: dependencies),
+                    onEvent: { event in
+                        // Log moment delete message events
+                        if let visibleMessage = event.message as? VisibleMessage,
+                           let text = visibleMessage.text,
+                           text.hasPrefix("__MOMENT_DELETE__:") {
+                            switch event {
+                            case .willSend:
+                                print("🟡 [MessageSendJob] MOMENT DELETE message willSend event")
+                            case .success(_, _, _, let serverTimestampMs, _):
+                                print("✅ [MessageSendJob] MOMENT DELETE message sent successfully! Server timestamp: \(serverTimestampMs ?? 0)")
+                            case .failure(_, _, _, let error):
+                                print("❌ [MessageSendJob] MOMENT DELETE message send failed: \(error)")
+                            }
+                        }
+                        
+                        // Call standard event handling
+                        MessageSender.standardEventHandling(using: dependencies)(event)
+                    },
                     using: dependencies
                 ).send(using: dependencies)
             }
@@ -243,11 +286,28 @@ public enum MessageSendJob: JobExecutor {
                 receiveCompletion: { result in
                     switch result {
                         case .finished:
+                            // Log moment delete message completion
+                            if let visibleMessage = details.message as? VisibleMessage,
+                               let text = visibleMessage.text,
+                               text.hasPrefix("__MOMENT_DELETE__:") {
+                                print("✅ [MessageSendJob] MOMENT DELETE message completed successfully after \(String(format: "%.2f", dependencies.dateNow.timeIntervalSince1970 - startTime))s")
+                            }
+                            
                             Log.info(.cat, "Completed sending \(messageType) (\(job.id ?? -1)) after \(.seconds(dependencies.dateNow.timeIntervalSince1970 - startTime), unit: .s)\(previousDeferralsMessage).")
                             dependencies.setAsync(.hasSentAMessage, true)
                             success(job, false)
                             
                         case .failure(let error):
+                            // Log moment delete message failure
+                            if let visibleMessage = details.message as? VisibleMessage,
+                               let text = visibleMessage.text,
+                               text.hasPrefix("__MOMENT_DELETE__:") {
+                                print("❌ [MessageSendJob] MOMENT DELETE message failed after \(String(format: "%.2f", dependencies.dateNow.timeIntervalSince1970 - startTime))s")
+                                print("❌ [MessageSendJob] Error: \(error)")
+                                print("❌ [MessageSendJob] Error type: \(type(of: error))")
+                                print("❌ [MessageSendJob] Error description: \(error.localizedDescription)")
+                            }
+                            
                             Log.info(.cat, "Failed to send \(messageType) (\(job.id ?? -1)) after \(.seconds(dependencies.dateNow.timeIntervalSince1970 - startTime), unit: .s)\(previousDeferralsMessage) due to error: \(error).")
                             
                             // Actual error handling

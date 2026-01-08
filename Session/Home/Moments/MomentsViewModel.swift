@@ -112,6 +112,8 @@ public class MomentsViewModel: ObservableObject {
                 Log.error("[MomentsViewModel] Observation failed: \(error)")
             },
             onChange: { [weak self] moments in
+                print("🟢 [MomentsViewModel] Moments updated: \(moments.count) moments")
+                Log.info("[MomentsViewModel] Moments updated: \(moments.count) moments")
                 self?.moments = moments
                 self?.isLoading = false
             }
@@ -398,14 +400,114 @@ public class MomentsViewModel: ObservableObject {
     }
     
     public func deleteMoment(momentId: Int64) throws {
+        let currentUserId = userSessionId.hexString
         let storage = dependencies[singleton: .storage]
+        
+        // Get moment info before deleting (to send notification)
+        var momentTimestampMs: Int64?
+        try storage.read { db in
+            if let moment = try? Moment.fetchOne(db, id: momentId) {
+                momentTimestampMs = moment.timestampMs
+            }
+        }
+        
+        // Delete from local database
         do {
+            var deletedCount: Int = 0
             try storage.write { db in
-            try Moment.filter(Moment.Columns.id == momentId).deleteAll(db)
+                deletedCount = try Moment.filter(Moment.Columns.id == momentId).deleteAll(db)
+                print("🔵 [MomentsViewModel] Deleted \(deletedCount) moment(s) with id \(momentId) from local database")
+                Log.info("[MomentsViewModel] Deleted \(deletedCount) moment(s) with id \(momentId) from local database")
+                
+                // Verify deletion
+                if let stillExists = try? Moment.fetchOne(db, id: momentId) {
+                    print("⚠️ [MomentsViewModel] WARNING: Moment \(momentId) still exists after deletion!")
+                    Log.warn("[MomentsViewModel] Moment \(momentId) still exists after deletion!")
+                } else {
+                    print("✅ [MomentsViewModel] Verified: Moment \(momentId) successfully deleted from local database")
+                    Log.info("[MomentsViewModel] Verified: Moment \(momentId) successfully deleted from local database")
+                }
+            }
+            
+            guard deletedCount > 0 else {
+                print("⚠️ [MomentsViewModel] WARNING: No moments were deleted (momentId: \(momentId))")
+                Log.warn("[MomentsViewModel] No moments were deleted (momentId: \(momentId))")
+                throw MomentsError.momentNotFound
             }
         } catch {
+            print("❌ [MomentsViewModel] ERROR: Failed to delete moment \(momentId): \(error)")
             Log.error("[MomentsViewModel] Failed to delete moment: \(error)")
             throw MomentsError.databaseError(error)
+        }
+        
+        // Send delete notification to all approved contacts
+        if let timestampMs = momentTimestampMs {
+            storage.writeAsync { [weak self] db in
+                guard let self = self else { return }
+                
+                let deleteData: [String: Any] = [
+                    "type": "delete",
+                    "momentId": momentId,
+                    "authorId": currentUserId,
+                    "timestampMs": timestampMs
+                ]
+                
+                guard let jsonData = try? JSONSerialization.data(withJSONObject: deleteData),
+                      let jsonString = String(data: jsonData, encoding: .utf8) else {
+                    Log.error("[MomentsViewModel] Failed to serialize delete message data")
+                    return
+                }
+                
+                let deleteText = "__MOMENT_DELETE__:\(jsonString)"
+                
+                print("🔵 [MomentsViewModel] Delete message text: \(deleteText)")
+                print("🔵 [MomentsViewModel] Delete message JSON: \(jsonString)")
+
+                // Get all approved contacts (excluding current user)
+                let contact: TypedTableAlias<Contact> = TypedTableAlias()
+                let contactIds: [String]
+                do {
+                    contactIds = try Contact
+                        .filter(contact[.isApproved] == true)
+                        .filter(contact[.isBlocked] == false)
+                        .filter(contact[.id] != currentUserId)
+                        .select(.id)
+                        .asRequest(of: String.self)
+                        .fetchAll(db)
+                } catch {
+                    print("❌ [MomentsViewModel] Failed to fetch contacts for delete notification: \(error)")
+                    Log.error("[MomentsViewModel] Failed to fetch contacts for delete notification: \(error)")
+                    return
+                }
+
+                guard !contactIds.isEmpty else {
+                    print("⚠️ [MomentsViewModel] No contacts to send delete notification to")
+                    return
+                }
+                
+                print("🔵 [MomentsViewModel] Sending delete notification to \(contactIds.count) contacts")
+
+                // Send to all approved contacts
+                for contactId in contactIds {
+                    do {
+                        try MessageSender.send(
+                            db,
+                            message: VisibleMessage(text: deleteText),
+                            interactionId: nil,
+                            threadId: contactId,
+                            threadVariant: .contact,
+                            using: self.dependencies
+                        )
+                        print("✅ [MomentsViewModel] Successfully sent delete notification to \(contactId)")
+                    } catch {
+                        print("❌ [MomentsViewModel] Failed to send delete notification to \(contactId): \(error)")
+                        Log.error("[MomentsViewModel] Failed to send delete notification to \(contactId): \(error)")
+                    }
+                }
+                
+                print("🔵 [MomentsViewModel] Sent delete notification to \(contactIds.count) contacts for moment \(momentId)")
+                Log.info("[MomentsViewModel] Sent delete notification to \(contactIds.count) contacts for moment \(momentId)")
+            }
         }
     }
 }
@@ -416,6 +518,7 @@ public enum MomentsError: LocalizedError {
     case emptyContent
     case databaseError(Error)
     case networkError(Error)
+    case momentNotFound
     
     public var errorDescription: String? {
         switch self {
@@ -425,6 +528,8 @@ public enum MomentsError: LocalizedError {
             return NSLocalizedString("数据库错误: \(error.localizedDescription)", comment: "Database error")
         case .networkError(let error):
             return NSLocalizedString("网络错误: \(error.localizedDescription)", comment: "Network error")
+        case .momentNotFound:
+            return NSLocalizedString("朋友圈不存在", comment: "Moment not found")
         }
     }
 }

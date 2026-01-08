@@ -55,6 +55,14 @@ public enum MessageReceiveJob: JobExecutor {
             updates: { db -> Error? in
                 for (messageInfo, protoContent) in messageData {
                     do {
+                        // Log message info for debugging
+                        if let visibleMessage = messageInfo.message as? VisibleMessage,
+                           let text = visibleMessage.text,
+                           text.hasPrefix("__MOMENT_DELETE__:") {
+                            print("🟡 [MessageReceiveJob] Processing MOMENT DELETE message from \(messageInfo.message.sender ?? "unknown")")
+                            print("🟡 [MessageReceiveJob] ThreadId: \(threadId), ThreadVariant: \(messageInfo.threadVariant)")
+                        }
+                        
                         let info: MessageReceiver.InsertedInteractionInfo? = try MessageReceiver.handle(
                             db,
                             threadId: threadId,
@@ -77,6 +85,15 @@ public enum MessageReceiveJob: JobExecutor {
                         )
                     }
                     catch {
+                        // Log errors for moment delete messages
+                        if let visibleMessage = messageInfo.message as? VisibleMessage,
+                           let text = visibleMessage.text,
+                           text.hasPrefix("__MOMENT_DELETE__:") {
+                            print("❌ [MessageReceiveJob] ERROR processing MOMENT DELETE message: \(error)")
+                            print("❌ [MessageReceiveJob] Error type: \(type(of: error))")
+                            print("❌ [MessageReceiveJob] Error description: \(error.localizedDescription)")
+                        }
+                        
                         // If the current message is a permanent failure then override it with the
                         // new error (we want to retry if there is a single non-permanent error)
                         switch error {

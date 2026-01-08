@@ -3,6 +3,7 @@
 import UIKit
 import Combine
 import GRDB
+import Lucide
 import SessionUIKit
 import SessionUtilitiesKit
 import SessionMessagingKit
@@ -80,6 +81,7 @@ public final class DiscoverViewController: BaseVC {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] moments in
                 guard let self = self else { return }
+                print("🟢 [DiscoverViewController] Moments changed, reloading table view. Count: \(moments.count)")
                 self.tableView.reloadData()
                 self.updateEmptyState(hasMoments: !moments.isEmpty)
             }
@@ -201,6 +203,21 @@ private class MomentCell: UITableViewCell {
         return result
     }()
     
+    private lazy var deleteButton: UIButton = {
+        let result = UIButton(type: .system)
+        if let trashIcon = Lucide.image(icon: .trash2, size: 16)?.withRenderingMode(.alwaysTemplate) {
+            result.setImage(trashIcon, for: .normal)
+        } else {
+            // Fallback to SF Symbol if Lucide is not available
+            result.setImage(UIImage(systemName: "trash"), for: .normal)
+        }
+        result.themeTintColor = .textSecondary
+        result.addTarget(self, action: #selector(deleteButtonTapped), for: .touchUpInside)
+        result.set(.width, to: 24)
+        result.set(.height, to: 24)
+        return result
+    }()
+    
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
         setupUI()
@@ -219,11 +236,17 @@ private class MomentCell: UITableViewCell {
         headerStack.spacing = Values.mediumSpacing
         headerStack.alignment = .center
         
+        // Time and delete button in a horizontal stack
+        let timeStack = UIStackView(arrangedSubviews: [timeLabel, deleteButton])
+        timeStack.axis = .horizontal
+        timeStack.spacing = Values.smallSpacing
+        timeStack.alignment = .center
+        
         let contentStack = UIStackView(arrangedSubviews: [
             headerStack,
             contentLabel,
             imageStackView,
-            timeLabel
+            timeStack
         ])
         contentStack.axis = .vertical
         contentStack.spacing = Values.mediumSpacing
@@ -268,6 +291,11 @@ private class MomentCell: UITableViewCell {
         // Time - 显示相对时间（如"2天前"）
         let date = Date(timeIntervalSince1970: Double(momentWithProfile.moment.timestampMs) / 1000)
         timeLabel.text = formatRelativeTime(from: date)
+        
+        // Show delete button only for current user's moments
+        let currentUserId = dependencies[cache: .general].sessionId.hexString
+        let isCurrentUserMoment = momentWithProfile.moment.authorId == currentUserId
+        deleteButton.isHidden = !isCurrentUserMoment
         
         // Load images
         loadImages(attachmentIds: momentWithProfile.imageAttachmentIds)
@@ -548,6 +576,48 @@ private class MomentCell: UITableViewCell {
         )
         
         attachmentObservations[attachmentId] = cancellable
+    }
+    
+    @objc private func deleteButtonTapped() {
+        guard let momentWithProfile = momentWithProfile,
+              let momentId = momentWithProfile.moment.id,
+              let viewModel = viewModel else { return }
+        
+        // Show confirmation alert
+        let alert = UIAlertController(
+            title: NSLocalizedString("删除动态", comment: "Delete Moment"),
+            message: NSLocalizedString("确定要删除这条动态吗？", comment: "Are you sure you want to delete this moment?"),
+            preferredStyle: .alert
+        )
+        
+        alert.addAction(UIAlertAction(title: NSLocalizedString("取消", comment: "Cancel"), style: .cancel))
+        alert.addAction(UIAlertAction(title: NSLocalizedString("删除", comment: "Delete"), style: .destructive) { [weak self] _ in
+            guard let self = self else { return }
+            do {
+                try viewModel.deleteMoment(momentId: momentId)
+            } catch {
+                Log.error("[MomentCell] Failed to delete moment: \(error)")
+                self.showErrorAlert(message: NSLocalizedString("删除失败，请重试", comment: "Failed to delete moment, please try again"))
+            }
+        })
+        
+        if let viewController = self.findViewController() {
+            viewController.present(alert, animated: true)
+        }
+    }
+}
+
+private extension MomentCell {
+    func showErrorAlert(message: String) {
+        guard let viewController = self.findViewController() else { return }
+        
+        let alert = UIAlertController(
+            title: NSLocalizedString("错误", comment: "Error"),
+            message: message,
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: NSLocalizedString("确定", comment: "OK"), style: .default))
+        viewController.present(alert, animated: true)
     }
 }
 
